@@ -1,4 +1,5 @@
-import 'sync_status.dart';
+import '../network/api_client.dart';
+import '../storage/local_db_service.dart';
 
 /// Sits between a Repository and the two actual data sources (sqflite and
 /// Supabase). A Repository never talks to Supabase directly - it goes
@@ -9,6 +10,13 @@ import 'sync_status.dart';
 /// (comparing updated_at timestamps) is left as a clear extension point
 /// rather than solved here, since it depends on the record type.
 class SyncManager {
+  final LocalDbService _db;
+  final ApiClient _api;
+
+  SyncManager({LocalDbService? db, ApiClient? api})
+      : _db = db ?? LocalDbService(),
+        _api = api ?? ApiClient.instance;
+
   /// Queues a record for upload. In the full implementation this would
   /// write to a local "outbox" table (record type + id + payload + status)
   /// and a background isolate/timer would drain it whenever connectivity
@@ -18,16 +26,46 @@ class SyncManager {
     required String recordId,
     required Map<String, dynamic> payload,
   }) async {
-    // TODO: insert into local sync_queue table with SyncStatus.pending
-    // TODO: kick off an attemptSync() call if currently online
+    await _db.enqueueSyncMutation({
+      'mutationId': recordId,
+      'entityType': table,
+      'operation': payload['operation'] ?? 'update',
+      'entityId': payload['entityId'],
+      'payload': payload['payload'] ?? payload,
+    });
   }
 
   /// Attempts to push everything currently pending. Called on connectivity
   /// regain, app resume, or a manual pull-to-refresh.
   Future<void> attemptSync() async {
-    // TODO: read all sync_queue rows where status is pending or failed
-    // TODO: for each, mark uploading, push to Supabase, then mark
-    //       synced on success or failed on error (with retry backoff)
+    final pending = await _db.getPendingSyncMutations();
+    if (pending.isEmpty) return;
+
+    final response = await _api.post('/api/v1/sync/push', body: {
+      'mutations': pending
+          .map((item) => {
+                'mutationId': item['mutationId'],
+                'entityType': item['entityType'],
+                'operation': item['operation'],
+                if (item['entityId'] != null) 'entityId': item['entityId'],
+                'payload': item['payload'],
+              })
+          .toList(),
+    });
+
+    for (final raw in response.data as List) {
+      final result = Map<String, dynamic>.from(raw as Map);
+      final mutationId = result['mutationId'] as String;
+      if (result['status'] == 'synced') {
+        await _db.removeSyncMutation(mutationId);
+      } else {
+        final error = result['error'] as Map?;
+        await _db.markSyncMutationFailed(
+          mutationId,
+          error?['message'] as String? ?? 'Synchronization failed.',
+        );
+      }
+    }
   }
 
   /// Called when a push succeeds but the backend row was already changed
@@ -36,8 +74,7 @@ class SyncManager {
     required String table,
     required String recordId,
   }) async {
-    // TODO: compare local vs remote updated_at, or surface to the user
-    //       for records where silent resolution isn't safe (e.g. inventory
-    //       counts edited by two pharmacy staff at once)
+    // Conflicts stay in the outbox with their backend error so the feature
+    // repository can refresh the server record and ask the user to retry.
   }
 }

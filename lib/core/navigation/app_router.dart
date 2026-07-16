@@ -6,13 +6,13 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/onboarding/presentation/screens/welcome_screen.dart';
-import '../../features/onboarding/presentation/screens/splash_screen.dart';
 import '../../features/onboarding/presentation/screens/choose_role_screen.dart';
 import '../../features/onboarding/presentation/screens/registration_step_one_screen.dart';
 import '../../features/onboarding/presentation/screens/registration_step_two_screen.dart';
 import '../../features/onboarding/presentation/screens/registration_step_three_screen.dart';
 import '../../features/onboarding/presentation/screens/registration_step_four_screen.dart';
 import '../../features/onboarding/presentation/screens/login_screen.dart';
+import '../../features/onboarding/presentation/screens/reset_password_screen.dart';
 import '../../features/onboarding/presentation/controllers/registration_cubit.dart';
 
 import '../../features/patient/presentation/screens/patient_home_screen.dart';
@@ -25,7 +25,6 @@ import '../../features/patient/presentation/screens/notifications_screen.dart';
 import '../../features/patient/presentation/screens/change_password_screen.dart';
 
 import '../../features/locator/presentation/screens/locator_screen.dart';
-import '../../core/widgets/stock_status_badge.dart';
 
 import '../../features/pharmacy/presentation/screens/pharmacy_dashboard_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
@@ -34,40 +33,18 @@ import '../../features/pharmacy/presentation/screens/orders_screen.dart';
 import '../../features/pharmacy/presentation/screens/reports_screen.dart';
 import '../../features/pharmacy/presentation/screens/pharmacy_more_screen.dart';
 import '../../features/pharmacy/presentation/screens/inventory_detail_screen.dart';
+import '../../features/provider/presentation/screens/provider_registration_screen.dart';
+import '../../features/provider/presentation/screens/provider_dashboard_screen.dart';
 
 import '../storage/local_db_service.dart';
-
-// Sample data for routing configuration
-// Removed sampleMedicines, using InventoryCubit with sqflite instead.
-const samplePharmacies = [
-  NearbyPharmacy(
-    name: 'Green Pharmacy',
-    distanceLabel: '0.4 km away',
-    isOpen: true,
-    level: StockLevel.inStock,
-    previewInventory: ['Amoxicillin 500mg', 'Ibuprofen 400mg'],
-  ),
-  NearbyPharmacy(
-    name: 'MediCare Pharmacy',
-    distanceLabel: '0.8 km away',
-    isOpen: true,
-    level: StockLevel.lowStock,
-    previewInventory: ['Paracetamol 500mg', 'Cough Syrup 100ml'],
-  ),
-  NearbyPharmacy(
-    name: 'HealthPlus Pharmacy',
-    distanceLabel: '1.2 km away',
-    isOpen: false,
-    level: StockLevel.outOfStock,
-    previewInventory: [],
-  ),
-];
+import '../../features/onboarding/data/profile_repository.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   redirect: (context, state) async {
     // Bypass auth check in widget tests where platform channels are not mocked
-    final isTesting = (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST')) ||
+    final isTesting = (!kIsWeb &&
+            Platform.environment.containsKey('FLUTTER_TEST')) ||
         WidgetsBinding.instance.runtimeType.toString().contains('TestWidgets');
     if (isTesting) return null;
 
@@ -76,7 +53,9 @@ final GoRouter appRouter = GoRouter(
       final session = supabase.auth.currentSession;
 
       final loggingIn = state.uri.path == '/login';
-      final registering = state.uri.path.startsWith('/register') || state.uri.path == '/choose-role';
+      final resettingPassword = state.uri.path == '/reset-password';
+      final registering = state.uri.path.startsWith('/register') ||
+          state.uri.path == '/choose-role';
       final welcoming = state.uri.path == '/';
 
       // 1. Unauthenticated
@@ -89,30 +68,36 @@ final GoRouter appRouter = GoRouter(
 
         if (step != null && welcoming) {
           if (step == 1) return '/register/2';
-          if (step == 2) return role == 'patient' ? '/register/3' : '/register/4';
+          if (step == 2) {
+            return role == 'patient' ? '/register/3' : '/register/4';
+          }
           if (step == 3) return '/register/4';
         }
 
-        if (loggingIn || registering || welcoming) return null;
+        if (loggingIn || resettingPassword || registering || welcoming) {
+          return null;
+        }
         return '/';
       }
 
       // 2. Authenticated — fetch role for routing
       if (welcoming || loggingIn || registering) {
-        final profile = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', session.user.id)
-            .single();
+        final profile = await ProfileRepository().getMe();
         final role = profile['role'] as String? ?? 'patient';
-        return role == 'pharmacy' ? '/pharmacy/dashboard' : '/patient/home';
+        if (role == 'pharmacy') return '/pharmacy/dashboard';
+        if (role == 'provider') return '/provider/dashboard';
+        return '/patient/home';
       }
     } catch (e) {
       // Default to unauthenticated welcome flow on any errors
       final loggingIn = state.uri.path == '/login';
-      final registering = state.uri.path.startsWith('/register') || state.uri.path == '/choose-role';
+      final resettingPassword = state.uri.path == '/reset-password';
+      final registering = state.uri.path.startsWith('/register') ||
+          state.uri.path == '/choose-role';
       final welcoming = state.uri.path == '/';
-      if (loggingIn || registering || welcoming) return null;
+      if (loggingIn || resettingPassword || registering || welcoming) {
+        return null;
+      }
       return '/';
     }
     return null;
@@ -145,6 +130,10 @@ final GoRouter appRouter = GoRouter(
       },
     ),
     GoRoute(
+      path: '/reset-password',
+      builder: (context, state) => const ResetPasswordScreen(),
+    ),
+    GoRoute(
       path: '/register/1',
       builder: (context, state) => const RegistrationStepOneScreen(),
     ),
@@ -160,13 +149,19 @@ final GoRouter appRouter = GoRouter(
       path: '/register/4',
       builder: (context, state) => const RegistrationStepFourScreen(),
     ),
+    GoRoute(
+      path: '/register/provider',
+      builder: (context, state) => const ProviderRegistrationScreen(),
+    ),
 
     // Patient Tab Routes
     GoRoute(
       path: '/patient/home',
       builder: (context, state) {
         final cubitState = context.read<RegistrationCubit>().state;
-        final name = cubitState.fullName.isNotEmpty ? cubitState.fullName : 'James Mensah';
+        final name = cubitState.fullName.isNotEmpty
+            ? cubitState.fullName
+            : 'James Mensah';
         return PatientHomeScreen(
           patientName: name,
           patientIdLabel: 'PAT-7X9A-2B4C',
@@ -181,9 +176,15 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/patient/nearby',
       builder: (context, state) {
-        final highlight = state.extra as String?;
+        final extra = state.extra;
+        final highlight = extra is Map
+            ? extra['highlight'] as String?
+            : extra is String
+                ? extra
+                : null;
+        final search = extra is Map ? extra['search'] as String? : null;
         return LocatorScreen(
-          pharmacies: samplePharmacies,
+          initialSearch: search,
           highlightPharmacyName: highlight,
         );
       },
@@ -213,6 +214,14 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/patient/change-password',
       builder: (context, state) => const ChangePasswordScreen(),
+    ),
+    GoRoute(
+      path: '/provider/dashboard',
+      builder: (context, state) => const ProviderDashboardScreen(),
+    ),
+    GoRoute(
+      path: '/provider/bookings',
+      builder: (context, state) => const BookingsScreen(),
     ),
 
     // Pharmacy Tab Routes

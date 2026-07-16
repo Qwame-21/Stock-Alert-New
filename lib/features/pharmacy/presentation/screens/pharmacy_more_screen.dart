@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../onboarding/data/profile_repository.dart';
 import '../../../onboarding/presentation/controllers/registration_cubit.dart';
 
 class PharmacyMoreScreen extends StatefulWidget {
@@ -29,12 +30,21 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
   void initState() {
     super.initState();
     final state = context.read<RegistrationCubit>().state;
-    _pharmacyNameCtrl.text = state.pharmacyName.isNotEmpty ? state.pharmacyName : 'Green Pharmacy';
-    _licenseCtrl.text = state.licenseNumber.isNotEmpty ? state.licenseNumber : 'PHA-90210-X';
-    _locationCtrl.text = state.location.isNotEmpty ? state.location : 'Spintex Road, Accra';
-    _authorityCtrl.text = state.registrationAuthority.isNotEmpty ? state.registrationAuthority : 'Pharmacy Council of Ghana';
-    _hoursCtrl.text = state.operatingHours.isNotEmpty ? state.operatingHours : '8:00 AM - 9:00 PM';
-    _supplierCtrl.text = state.supplierPreference.isNotEmpty ? state.supplierPreference : 'Standard Wholesales Ltd';
+    _pharmacyNameCtrl.text =
+        state.pharmacyName.isNotEmpty ? state.pharmacyName : 'Green Pharmacy';
+    _licenseCtrl.text =
+        state.licenseNumber.isNotEmpty ? state.licenseNumber : 'PHA-90210-X';
+    _locationCtrl.text =
+        state.location.isNotEmpty ? state.location : 'Spintex Road, Accra';
+    _authorityCtrl.text = state.registrationAuthority.isNotEmpty
+        ? state.registrationAuthority
+        : 'Pharmacy Council of Ghana';
+    _hoursCtrl.text = state.operatingHours.isNotEmpty
+        ? state.operatingHours
+        : '8:00 AM - 9:00 PM';
+    _supplierCtrl.text = state.supplierPreference.isNotEmpty
+        ? state.supplierPreference
+        : 'Standard Wholesales Ltd';
     _loadPreferences();
   }
 
@@ -67,15 +77,11 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
     cubit.updateProfile(updatedState);
 
     try {
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId != null) {
-        await Supabase.instance.client.from('profiles').upsert({
-          'id': userId,
-          'pharmacy_name': _pharmacyNameCtrl.text,
-          'license_number': _licenseCtrl.text,
-          'location': _locationCtrl.text,
-        });
-      }
+      await ProfileRepository().update({
+        'pharmacyName': _pharmacyNameCtrl.text,
+        'licenseNumber': _licenseCtrl.text,
+        'location': _locationCtrl.text,
+      });
     } catch (_) {
       // If offline, the Cubit still holds the updated state in memory
     }
@@ -106,26 +112,35 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Confirm Log Out'),
-          content: const Text('Are you sure you want to log out of StockAlert?'),
+          content:
+              const Text('Are you sure you want to log out of StockAlert?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textSecondary)),
             ),
             TextButton(
               onPressed: () async {
                 Navigator.pop(context); // close dialog
+                final registrationCubit =
+                    this.context.read<RegistrationCubit>();
 
-                await Supabase.instance.client.auth.signOut();
-
-                if (mounted) {
-                  context.read<RegistrationCubit>().reset();
-                  context.go('/');
+                try {
+                  await Supabase.instance.client.auth.signOut();
+                } catch (_) {
+                  // The local session is cleared before remote revocation.
                 }
+                if (!mounted) return;
+                registrationCubit.reset();
+                this.context.go('/login');
               },
-              child: const Text('Log Out', style: TextStyle(color: AppColors.statusBad, fontWeight: FontWeight.bold)),
+              child: const Text('Log Out',
+                  style: TextStyle(
+                      color: AppColors.statusBad, fontWeight: FontWeight.bold)),
             ),
           ],
         );
@@ -138,7 +153,8 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Staff Accounts'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -163,7 +179,8 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Close', style: TextStyle(color: AppColors.accent)),
+              child: const Text('Close',
+                  style: TextStyle(color: AppColors.accent)),
             ),
           ],
         );
@@ -176,25 +193,30 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Supplier Preferences'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Primary Supplier:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('Primary Supplier:',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Text(_supplierCtrl.text, style: AppTextStyles.subheading),
               const SizedBox(height: 16),
-              const Text('Available Distributors:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('Available Distributors:',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              const Text('• Standard Wholesales Ltd\n• Kinapharma Distributor Accra\n• Tobinco Pharmaceuticals'),
+              const Text(
+                  '• Standard Wholesales Ltd\n• Kinapharma Distributor Accra\n• Tobinco Pharmaceuticals'),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Close', style: TextStyle(color: AppColors.accent)),
+              child: const Text('Close',
+                  style: TextStyle(color: AppColors.accent)),
             ),
           ],
         );
@@ -224,7 +246,8 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
             title: Text('Settings & More', style: AppTextStyles.subheading),
             actions: [
               IconButton(
-                icon: Icon(_isEditing ? Icons.check : Icons.edit, color: AppColors.accent),
+                icon: Icon(_isEditing ? Icons.check : Icons.edit,
+                    color: AppColors.accent),
                 onPressed: () {
                   if (_isEditing) {
                     _saveProfile();
@@ -258,7 +281,8 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
                           CircleAvatar(
                             backgroundColor: AppColors.accent.withOpacity(0.1),
                             radius: 28,
-                            child: const Icon(Icons.storefront, color: AppColors.accent, size: 28),
+                            child: const Icon(Icons.storefront,
+                                color: AppColors.accent, size: 28),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
@@ -266,11 +290,16 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 if (!_isEditing) ...[
-                                  Text(_pharmacyNameCtrl.text, style: AppTextStyles.subheading),
-                                  Text('License: ${_licenseCtrl.text}', style: AppTextStyles.body),
-                                  Text(_locationCtrl.text, style: AppTextStyles.body),
+                                  Text(_pharmacyNameCtrl.text,
+                                      style: AppTextStyles.subheading),
+                                  Text('License: ${_licenseCtrl.text}',
+                                      style: AppTextStyles.body),
+                                  Text(_locationCtrl.text,
+                                      style: AppTextStyles.body),
                                 ] else
-                                  Text('Edit Mode', style: AppTextStyles.subheading.copyWith(color: AppColors.accent)),
+                                  Text('Edit Mode',
+                                      style: AppTextStyles.subheading
+                                          .copyWith(color: AppColors.accent)),
                               ],
                             ),
                           ),
@@ -280,7 +309,8 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
                         const Divider(height: 24, color: AppColors.hairline),
                         _buildEditableField('Pharmacy Name', _pharmacyNameCtrl),
                         _buildEditableField('License Number', _licenseCtrl),
-                        _buildEditableField('Registration Authority', _authorityCtrl),
+                        _buildEditableField(
+                            'Registration Authority', _authorityCtrl),
                         _buildEditableField('Location', _locationCtrl),
                         _buildEditableField('Operating Hours', _hoursCtrl),
                         _buildEditableField('Primary Supplier', _supplierCtrl),
@@ -303,7 +333,8 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
                 _buildSwitchTile(
                   icon: Icons.inventory_2_outlined,
                   title: 'Low Stock Alerts',
-                  subtitle: 'Notify when a medicine count falls below threshold',
+                  subtitle:
+                      'Notify when a medicine count falls below threshold',
                   value: _alertOnLowStock,
                   onChanged: _toggleLowStock,
                 ),
@@ -415,7 +446,8 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: AppTextStyles.subheading),
-                Text(subtitle, style: AppTextStyles.body.copyWith(fontSize: 12)),
+                Text(subtitle,
+                    style: AppTextStyles.body.copyWith(fontSize: 12)),
               ],
             ),
           ),
@@ -455,7 +487,8 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
             if (trailingText != null)
               Text(
                 trailingText,
-                style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+                style:
+                    AppTextStyles.body.copyWith(color: AppColors.textSecondary),
               ),
             const SizedBox(width: 8),
             const Icon(Icons.chevron_right, color: AppColors.textSecondary),

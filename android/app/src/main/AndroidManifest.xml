@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+
     <application
-        android:label="stock_a_app"
+        android:label="Stock Alerts"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -24,14 +29,18 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Deep link handler for Supabase email confirmation.
-                 Supabase redirect URL must be set to stockalert://auth/callback
+            <!-- Deep link handler for Supabase email confirmation and password recovery.
+                 Supabase redirect URLs must include stockalert://auth/callback
+                 and stockalert://auth/reset-password
                  in: Dashboard → Authentication → URL Configuration → Redirect URLs -->
-            <intent-filter android:autoVerify="true">
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="stockalert" android:host="auth" />
+                <data
+                    android:scheme="stockalert"
+                    android:host="auth"
+                    android:pathPrefix="/" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

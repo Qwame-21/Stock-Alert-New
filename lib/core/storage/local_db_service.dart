@@ -10,6 +10,7 @@ class LocalDbService {
 
   Database? _database;
   final Map<String, String> _webMemCache = {};
+  final List<Map<String, dynamic>> _webSyncQueue = [];
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -23,28 +24,81 @@ class LocalDbService {
 
     return await openDatabase(
       path,
-      version: 3, // Incremented version to add detailed bookings columns
+      version: 6,
       onCreate: (db, version) async {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          await db.execute('CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, name TEXT, expiry TEXT, level TEXT)');
-          await db.execute('CREATE TABLE IF NOT EXISTS bookings (id TEXT PRIMARY KEY, doctorName TEXT, specialty TEXT, date TEXT, time TEXT)');
+          await db.execute(
+              'CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, name TEXT, expiry TEXT, level TEXT)');
+          await db.execute(
+              'CREATE TABLE IF NOT EXISTS bookings (id TEXT PRIMARY KEY, doctorName TEXT, specialty TEXT, date TEXT, time TEXT)');
         }
         if (oldVersion < 3) {
-          await db.execute('ALTER TABLE bookings ADD COLUMN avatarUrl TEXT');
-          await db.execute('ALTER TABLE bookings ADD COLUMN videoLink TEXT');
-          await db.execute('ALTER TABLE bookings ADD COLUMN notes TEXT');
+          await _addColumnIfMissing(db, 'bookings', 'avatarUrl', 'TEXT');
+          await _addColumnIfMissing(db, 'bookings', 'videoLink', 'TEXT');
+          await _addColumnIfMissing(db, 'bookings', 'notes', 'TEXT');
+        }
+        if (oldVersion < 4) {
+          await db.execute(
+            'CREATE TABLE IF NOT EXISTS sync_queue ('
+            'mutationId TEXT PRIMARY KEY, entityType TEXT NOT NULL, '
+            'operation TEXT NOT NULL, entityId TEXT, payload TEXT NOT NULL, '
+            'attemptCount INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, '
+            'lastError TEXT, createdAt TEXT NOT NULL)',
+          );
+        }
+        if (oldVersion < 5) {
+          await _addColumnIfMissing(
+            db,
+            'bookings',
+            'version',
+            'INTEGER NOT NULL DEFAULT 1',
+          );
+          await _addColumnIfMissing(
+            db,
+            'bookings',
+            'status',
+            "TEXT NOT NULL DEFAULT 'pending'",
+          );
+        }
+        if (oldVersion < 6) {
+          await _addColumnIfMissing(db, 'bookings', 'providerId', 'TEXT');
         }
       },
     );
   }
 
+  Future<void> _addColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    String definition,
+  ) async {
+    final columns = await db.rawQuery('PRAGMA table_info("$table")');
+    final exists = columns.any((row) => row['name'] == column);
+    if (!exists) {
+      await db.execute(
+        'ALTER TABLE "$table" ADD COLUMN "$column" $definition',
+      );
+    }
+  }
+
   Future<void> _createTables(Database db) async {
-    await db.execute('CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value TEXT)');
-    await db.execute('CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, name TEXT, expiry TEXT, level TEXT)');
-    await db.execute('CREATE TABLE IF NOT EXISTS bookings (id TEXT PRIMARY KEY, doctorName TEXT, specialty TEXT, date TEXT, time TEXT, avatarUrl TEXT, videoLink TEXT, notes TEXT)');
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value TEXT)');
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, name TEXT, expiry TEXT, level TEXT)');
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS bookings (id TEXT PRIMARY KEY, doctorName TEXT, specialty TEXT, date TEXT, time TEXT, avatarUrl TEXT, videoLink TEXT, notes TEXT, version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT "pending", providerId TEXT)');
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS sync_queue ('
+      'mutationId TEXT PRIMARY KEY, entityType TEXT NOT NULL, '
+      'operation TEXT NOT NULL, entityId TEXT, payload TEXT NOT NULL, '
+      'attemptCount INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, '
+      'lastError TEXT, createdAt TEXT NOT NULL)',
+    );
   }
 
   // Key-Value helpers
@@ -94,12 +148,14 @@ class LocalDbService {
   Future<void> clearAll() async {
     if (kIsWeb) {
       _webMemCache.clear();
+      _webSyncQueue.clear();
       return;
     }
     final db = await database;
     await db.delete('kv_store');
     await db.delete('inventory');
     await db.delete('bookings');
+    await db.delete('sync_queue');
   }
 
   // Inventory helpers
@@ -151,7 +207,8 @@ class LocalDbService {
   // Only in-progress registration state is saved locally.
 
   // High-level registration step helpers
-  Future<void> saveRegistrationProgress(int step, Map<String, dynamic> stateJson) async {
+  Future<void> saveRegistrationProgress(
+      int step, Map<String, dynamic> stateJson) async {
     await write('reg_step', step.toString());
     await write('reg_state', jsonEncode(stateJson));
   }
@@ -172,5 +229,83 @@ class LocalDbService {
   Future<void> clearRegistrationProgress() async {
     await delete('reg_step');
     await delete('reg_state');
+  }
+
+  Future<void> enqueueSyncMutation(Map<String, dynamic> mutation) async {
+    final record = {
+      ...mutation,
+      'payload': jsonEncode(mutation['payload'] ?? const {}),
+      'attemptCount': 0,
+      'status': 'pending',
+      'lastError': null,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+    };
+    if (kIsWeb) {
+      _webSyncQueue.removeWhere(
+        (item) => item['mutationId'] == record['mutationId'],
+      );
+      _webSyncQueue.add(record);
+      return;
+    }
+    final db = await database;
+    await db.insert(
+      'sync_queue',
+      record,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingSyncMutations({
+    int limit = 50,
+  }) async {
+    final records = kIsWeb
+        ? _webSyncQueue.take(limit).toList()
+        : await (await database).query(
+            'sync_queue',
+            where: 'status IN (?, ?)',
+            whereArgs: ['pending', 'failed'],
+            orderBy: 'createdAt ASC',
+            limit: limit,
+          );
+    return records
+        .map((record) => {
+              ...record,
+              'payload': jsonDecode(record['payload'] as String),
+            })
+        .toList();
+  }
+
+  Future<void> removeSyncMutation(String mutationId) async {
+    if (kIsWeb) {
+      _webSyncQueue.removeWhere((item) => item['mutationId'] == mutationId);
+      return;
+    }
+    await (await database).delete(
+      'sync_queue',
+      where: 'mutationId = ?',
+      whereArgs: [mutationId],
+    );
+  }
+
+  Future<void> markSyncMutationFailed(
+    String mutationId,
+    String error,
+  ) async {
+    if (kIsWeb) {
+      final index =
+          _webSyncQueue.indexWhere((item) => item['mutationId'] == mutationId);
+      if (index >= 0) {
+        _webSyncQueue[index]['status'] = 'failed';
+        _webSyncQueue[index]['lastError'] = error;
+        _webSyncQueue[index]['attemptCount'] =
+            (_webSyncQueue[index]['attemptCount'] as int) + 1;
+      }
+      return;
+    }
+    await (await database).rawUpdate(
+      'UPDATE sync_queue SET status = ?, lastError = ?, '
+      'attemptCount = attemptCount + 1 WHERE mutationId = ?',
+      ['failed', error, mutationId],
+    );
   }
 }

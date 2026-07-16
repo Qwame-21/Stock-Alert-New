@@ -39,6 +39,13 @@ class _ChooseRoleScreenState extends State<ChooseRoleScreen> {
             ),
             const SizedBox(height: 12),
             _RoleTile(
+              icon: Icons.medical_services_outlined,
+              label: 'Consultation Provider',
+              selected: _selected == 'provider',
+              onTap: () => setState(() => _selected = 'provider'),
+            ),
+            const SizedBox(height: 12),
+            _RoleTile(
               icon: Icons.storefront_outlined,
               label: 'Community Pharmacy',
               selected: _selected == 'pharmacy',
@@ -51,13 +58,16 @@ class _ChooseRoleScreenState extends State<ChooseRoleScreen> {
                 onPressed: _selected == null
                     ? null
                     : () {
-                        context.read<RegistrationCubit>().setRole(_selected!);
-                        context.push('/register/1');
+                        if (_selected == 'provider') {
+                          context.push('/register/provider');
+                        } else {
+                          context.read<RegistrationCubit>().setRole(_selected!);
+                          context.push('/register/1');
+                        }
                       },
                 child: const Text('Continue'),
               ),
             ),
-
             const SizedBox(height: 24),
           ],
         ),
@@ -107,4 +117,3 @@ class _RoleTile extends StatelessWidget {
     );
   }
 }
-

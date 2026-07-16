@@ -1,33 +1,38 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/storage/local_db_service.dart';
+import '../../data/bookings_repository.dart';
 import '../../data/models/appointment.dart';
 
 class BookingsState {
   final List<Appointment> appointments;
   final bool isLoading;
+  final String? error;
 
   const BookingsState({
     this.appointments = const [],
     this.isLoading = false,
+    this.error,
   });
 
   BookingsState copyWith({
     List<Appointment>? appointments,
     bool? isLoading,
+    String? error,
+    bool clearError = false,
   }) {
     return BookingsState(
       appointments: appointments ?? this.appointments,
       isLoading: isLoading ?? this.isLoading,
+      error: clearError ? null : error ?? this.error,
     );
   }
 }
 
 class BookingsCubit extends Cubit<BookingsState> {
-  final LocalDbService _db;
+  final BookingsRepository _repository;
   bool _isLoaded = false;
 
   BookingsCubit()
-      : _db = LocalDbService(),
+      : _repository = BookingsRepository(),
         super(const BookingsState());
 
   /// Loads data lazily upon first request.
@@ -35,37 +40,46 @@ class BookingsCubit extends Cubit<BookingsState> {
     if (_isLoaded) return;
 
     emit(state.copyWith(isLoading: true));
-    final records = await _db.getBookings();
-
-    if (records.isEmpty) {
-      // Seed data if DB is empty
-      final seedAppt = Appointment(
-        id: 'BKG-101',
-        doctorName: 'Dr. Emmanuel Boateng',
-        specialty: 'General Practitioner',
-        date: '15/07/2026',
-        time: '10:30 AM',
-      );
-      await _db.insertBooking(seedAppt.toJson());
-      emit(state.copyWith(appointments: [seedAppt], isLoading: false));
-    } else {
-      final appts = records.map((r) => Appointment.fromJson(r)).toList();
-      emit(state.copyWith(appointments: appts, isLoading: false));
+    try {
+      final appointments = await _repository.load();
+      emit(state.copyWith(
+        appointments: appointments,
+        isLoading: false,
+        clearError: true,
+      ));
+    } catch (error) {
+      emit(state.copyWith(isLoading: false, error: error.toString()));
     }
     _isLoaded = true;
   }
 
   Future<void> addBooking(Appointment appointment) async {
-    await _db.insertBooking(appointment.toJson());
-    final current = List<Appointment>.from(state.appointments);
-    current.add(appointment);
-    emit(state.copyWith(appointments: current));
+    emit(state.copyWith(isLoading: true, clearError: true));
+    try {
+      final saved = await _repository.add(appointment);
+      final current = List<Appointment>.from(state.appointments);
+      current.add(saved);
+      emit(state.copyWith(
+        appointments: current,
+        isLoading: false,
+        clearError: true,
+      ));
+    } catch (error) {
+      emit(state.copyWith(isLoading: false, error: error.toString()));
+      rethrow;
+    }
   }
 
   Future<void> removeBooking(String id) async {
-    await _db.deleteBooking(id);
     final current = List<Appointment>.from(state.appointments);
+    final appointment = current.firstWhere((item) => item.id == id);
+    await _repository.cancel(appointment);
     current.removeWhere((appt) => appt.id == id);
     emit(state.copyWith(appointments: current));
+  }
+
+  Future<void> refresh() async {
+    _isLoaded = false;
+    await loadBookings();
   }
 }

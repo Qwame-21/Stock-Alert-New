@@ -2,8 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/storage/local_db_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../data/profile_repository.dart';
 import '../controllers/registration_cubit.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -46,10 +49,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkBiometricsPreference() async {
-    // Biometrics preference could be loaded from Supabase profile in the future.
-    // For now, default to off.
+    final enabled = await LocalDbService().read('biometrics_enabled') == 'true';
+    final auth = LocalAuthentication();
+    final available =
+        await auth.isDeviceSupported() && await auth.canCheckBiometrics;
+    if (!mounted) return;
     setState(() {
-      _biometricsEnabled = false;
+      _biometricsEnabled = enabled && available;
     });
   }
 
@@ -85,7 +91,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (fieldName == 'email') {
         if (value.trim().isEmpty) {
           _emailError = 'Email Address is required';
-        } else if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+        } else if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+            .hasMatch(value)) {
           _emailError = 'Enter a valid email address';
         } else {
           _emailError = null;
@@ -112,6 +119,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_emailError != null || _passwordError != null) return;
 
     try {
+      // A manual login is not a password-recovery session.
+      await LocalDbService().delete('password_reset_pending');
+
       // Real Supabase authentication
       final response = await Supabase.instance.client.auth.signInWithPassword(
         email: email,
@@ -119,39 +129,40 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       final user = response.user;
-      if (user == null) throw AuthException('Login failed. No user returned.');
+      if (user == null) {
+        throw const AuthException('Login failed. No user returned.');
+      }
 
-      // Fetch role from the profiles table
-      final profile = await Supabase.instance.client
-          .from('profiles')
-          .select('role, full_name, phone_number, dob, gender, pharmacy_name, license_number, location')
-          .eq('id', user.id)
-          .single();
+      final profile = await ProfileRepository().getMe();
 
       final role = profile['role'] as String? ?? 'patient';
 
       // Hydrate Cubit so the rest of the app has profile data
       if (mounted) {
         context.read<RegistrationCubit>().updateProfile(
-          RegistrationState.fromJson({
-            ...profile,
-            'email': user.email ?? email,
-            'fullName': profile['full_name'] ?? '',
-            'phoneNumber': profile['phone_number'] ?? '',
-            'pharmacyName': profile['pharmacy_name'] ?? '',
-            'licenseNumber': profile['license_number'] ?? '',
-          }),
-        );
+              RegistrationState.fromJson({
+                ...profile,
+                'email': user.email ?? email,
+                'fullName': profile['full_name'] ?? '',
+                'phoneNumber': profile['phone_number'] ?? '',
+                'pharmacyName': profile['pharmacy_name'] ?? '',
+                'pharmacyId': profile['pharmacy_id'] ?? '',
+                'licenseNumber': profile['license_number'] ?? '',
+              }),
+            );
       }
 
       if (mounted) {
         if (role == 'patient') {
           context.go('/patient/home');
+        } else if (role == 'provider') {
+          context.go('/provider/dashboard');
         } else {
           context.go('/pharmacy/dashboard');
         }
       }
     } on AuthException catch (e) {
+      if (!mounted) return;
       // Login failure with Supabase error
       setState(() {
         _failedAttempts++;
@@ -160,18 +171,23 @@ class _LoginScreenState extends State<LoginScreen> {
       // Translate Supabase error codes to friendly messages
       String friendlyMessage;
       final rawMsg = e.message.toLowerCase();
-      if (rawMsg.contains('invalid login credentials') ||
-          rawMsg.contains('invalid email or password') ||
-          rawMsg.contains('email not confirmed')) {
+      if (rawMsg.contains('email not confirmed')) {
+        friendlyMessage =
+            'Your account exists, but your email has not been confirmed. Please check your inbox and spam folder.';
+      } else if (rawMsg.contains('invalid login credentials') ||
+          rawMsg.contains('invalid email or password')) {
         // Supabase returns the same error for bad email OR bad password for security.
         // We show a generic but friendly message.
-        friendlyMessage = 'Account not found or incorrect password. Please check your details.';
-      } else if (rawMsg.contains('too many requests') || rawMsg.contains('rate limit')) {
-        friendlyMessage = 'Too many attempts. Please wait a moment and try again.';
-      } else if (rawMsg.contains('email not confirmed')) {
-        friendlyMessage = 'Please confirm your email before logging in.';
+        friendlyMessage =
+            'Account not found or incorrect password. Please check your details.';
+      } else if (rawMsg.contains('too many requests') ||
+          rawMsg.contains('rate limit')) {
+        friendlyMessage =
+            'Too many attempts. Please wait a moment and try again.';
       } else {
-        friendlyMessage = e.message.isNotEmpty ? e.message : 'Login failed. Please try again.';
+        friendlyMessage = e.message.isNotEmpty
+            ? e.message
+            : 'Login failed. Please try again.';
       }
 
       if (_failedAttempts >= 5) {
@@ -191,6 +207,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('An unexpected error occurred. Please try again.'),
@@ -200,70 +217,135 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _showForgotPasswordDialog() async {
+    final resetEmailCtrl = TextEditingController(text: _emailCtrl.text.trim());
+    final messenger = ScaffoldMessenger.of(context);
+    String? emailError;
+    var isSending = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> sendResetEmail() async {
+            final email = resetEmailCtrl.text.trim();
+            if (!RegExp(r'^[\w-.]+@([\w-]+\.)+[\w-]{2,}$').hasMatch(email)) {
+              setDialogState(() {
+                emailError = 'Enter a valid email address';
+              });
+              return;
+            }
+
+            setDialogState(() {
+              emailError = null;
+              isSending = true;
+            });
+
+            try {
+              await Supabase.instance.client.auth.resetPasswordForEmail(
+                email,
+                redirectTo: 'stockalert://auth/reset-password',
+              );
+              await LocalDbService().write(
+                'password_reset_pending',
+                DateTime.now().toUtc().toIso8601String(),
+              );
+              if (!dialogContext.mounted) return;
+              Navigator.of(dialogContext).pop();
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Password reset link sent. Check your inbox and spam folder.',
+                  ),
+                  backgroundColor: AppColors.statusGood,
+                ),
+              );
+            } on AuthException catch (error) {
+              setDialogState(() {
+                emailError = error.message;
+                isSending = false;
+              });
+            } catch (_) {
+              setDialogState(() {
+                emailError =
+                    'Unable to send the reset email. Please try again.';
+                isSending = false;
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Reset password'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter your account email and we’ll send you a password reset link.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: resetEmailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
+                  enabled: !isSending,
+                  decoration: InputDecoration(
+                    labelText: 'Email address',
+                    errorText: emailError,
+                  ),
+                  onSubmitted: isSending ? null : (_) => sendResetEmail(),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    isSending ? null : () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isSending ? null : sendResetEmail,
+                child: isSending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Send reset link'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    resetEmailCtrl.dispose();
+  }
+
   Future<void> _handleBiometricLogin() async {
     if (!_biometricsEnabled) return;
-
-    // Simulate quick Face ID dialog prompt
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: const [
-              Icon(Icons.fingerprint, color: AppColors.accent, size: 28),
-              SizedBox(width: 10),
-              Text('Biometric Login'),
-            ],
-          ),
-          content: const Text('Scanning face/fingerprint to log in securely...'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context); // Close dialog
-
-                // Biometric success: check existing Supabase session for role
-                final session = Supabase.instance.client.auth.currentSession;
-                if (session == null || !mounted) return;
-
-                try {
-                  final profile = await Supabase.instance.client
-                      .from('profiles')
-                      .select('role')
-                      .eq('id', session.user.id)
-                      .single();
-                  final role = profile['role'] as String? ?? 'patient';
-
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Biometric verification successful')),
-                    );
-                    if (role == 'patient') {
-                      context.go('/patient/home');
-                    } else {
-                      context.go('/pharmacy/dashboard');
-                    }
-                  }
-                } catch (_) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Could not verify session. Please log in manually.'),
-                        backgroundColor: AppColors.statusBad,
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text('Simulate Success', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        );
-      },
+    final authenticated = await LocalAuthentication().authenticate(
+      localizedReason: 'Authenticate to open StockAlert',
+      options: const AuthenticationOptions(biometricOnly: true),
+    );
+    if (!authenticated || !mounted) return;
+    if (Supabase.instance.client.auth.currentSession == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Your saved session expired. Use your password.'),
+          backgroundColor: AppColors.statusWarning,
+        ),
+      );
+      return;
+    }
+    final profile = await ProfileRepository().getMe();
+    if (!mounted) return;
+    final role = profile['role'] as String? ?? 'patient';
+    context.go(
+      role == 'patient'
+          ? '/patient/home'
+          : role == 'provider'
+              ? '/provider/dashboard'
+              : '/pharmacy/dashboard',
     );
   }
 
@@ -291,7 +373,6 @@ class _LoginScreenState extends State<LoginScreen> {
               style: AppTextStyles.body,
             ),
             const SizedBox(height: 32),
-
             const _FieldLabel('Email Address', isRequired: true),
             _AppTextField(
               hint: 'james.mensah@gmail.com',
@@ -299,7 +380,6 @@ class _LoginScreenState extends State<LoginScreen> {
               errorText: _emailError,
               onChanged: (val) => _validateField('email', val),
             ),
-
             const _FieldLabel('Password', isRequired: true),
             _AppTextField(
               hint: '••••••••••••',
@@ -313,7 +393,13 @@ class _LoginScreenState extends State<LoginScreen> {
               errorText: _passwordError,
               onChanged: (val) => _validateField('password', val),
             ),
-
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _showForgotPasswordDialog,
+                child: const Text('Forgot password?'),
+              ),
+            ),
             if (isCooldown)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
@@ -326,7 +412,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   textAlign: TextAlign.center,
                 ),
               ),
-
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -334,11 +419,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: const Text('Log In'),
               ),
             ),
-
             if (_biometricsEnabled) ...[
               const SizedBox(height: 24),
               Center(
-                child: Text('OR', style: AppTextStyles.label.copyWith(color: AppColors.textSecondary)),
+                child: Text('OR',
+                    style: AppTextStyles.label
+                        .copyWith(color: AppColors.textSecondary)),
               ),
               const SizedBox(height: 16),
               Center(
@@ -349,7 +435,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.accent,
                     side: const BorderSide(color: AppColors.accent),
-                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 14, horizontal: 20),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -381,7 +468,8 @@ class _FieldLabel extends StatelessWidget {
             if (isRequired)
               TextSpan(
                 text: ' (Required)',
-                style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary),
+                style: AppTextStyles.body
+                    .copyWith(fontSize: 12, color: AppColors.textSecondary),
               ),
           ],
         ),
@@ -457,7 +545,8 @@ class _AppTextFieldState extends State<_AppTextField> {
                 suffixIcon: widget.icon == null
                     ? null
                     : IconButton(
-                        icon: Icon(widget.icon, color: AppColors.textSecondary, size: 20),
+                        icon: Icon(widget.icon,
+                            color: AppColors.textSecondary, size: 20),
                         onPressed: widget.onIconTap,
                       ),
               ),

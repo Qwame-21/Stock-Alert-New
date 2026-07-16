@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Platform-specific Google Maps API key resolution.
 ///
@@ -7,15 +8,23 @@ import 'dart:io';
 ///   --dart-define=MAPS_API_KEY_IOS=<key>
 ///
 /// If a key is absent (empty string), [hasKey] returns false and the
-/// locator screen falls back to the mock/painted map layer automatically.
+/// locator screen displays a configuration message.
 class MapsConfig {
   MapsConfig._();
 
-  static const String _androidKey =
-      String.fromEnvironment('MAPS_API_KEY_ANDROID', defaultValue: '');
+  static const String _definedAndroidKey =
+      String.fromEnvironment('MAPS_API_KEY_ANDROID');
 
-  static const String _iosKey =
-      String.fromEnvironment('MAPS_API_KEY_IOS', defaultValue: '');
+  static const String _definedIosKey =
+      String.fromEnvironment('MAPS_API_KEY_IOS');
+
+  static String get _androidKey => _definedAndroidKey.isNotEmpty
+      ? _definedAndroidKey
+      : dotenv.env['MAPS_API_KEY_ANDROID'] ?? '';
+
+  static String get _iosKey => _definedIosKey.isNotEmpty
+      ? _definedIosKey
+      : dotenv.env['MAPS_API_KEY_IOS'] ?? '';
 
   /// Returns the correct key for the current platform.
   static String get apiKey {

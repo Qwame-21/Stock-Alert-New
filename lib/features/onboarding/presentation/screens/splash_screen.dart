@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../data/profile_repository.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -10,7 +11,8 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _pulseAnimation;
 
@@ -22,7 +24,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       duration: const Duration(seconds: 1),
     )..repeat(reverse: true);
 
-    _pulseAnimation = Tween<double>(begin: 0.9, end: 1.1).animate(
+    _pulseAnimation = Tween<double>(begin: 1, end: 1.025).animate(
       CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
     );
 
@@ -48,16 +50,14 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     }
 
     try {
-      final profile = await Supabase.instance.client
-          .from('profiles')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
+      final profile = await ProfileRepository().getMe();
 
       final role = profile['role'] as String? ?? 'patient';
       if (mounted) {
         if (role == 'pharmacy') {
           context.go('/pharmacy/dashboard');
+        } else if (role == 'provider') {
+          context.go('/provider/dashboard');
         } else {
           context.go('/patient/home');
         }
@@ -73,45 +73,38 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ScaleTransition(
-              scale: _pulseAnimation,
+      backgroundColor: const Color(0xFF050A0B),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          ScaleTransition(
+            scale: _pulseAnimation,
+            child: Image.asset(
+              'assets/images/app_brand.png',
+              fit: BoxFit.cover,
+            ),
+          ),
+          SafeArea(
+            child: Align(
+              alignment: const Alignment(0, 0.82),
               child: Container(
-                padding: const EdgeInsets.all(24),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 decoration: BoxDecoration(
-                  color: AppColors.accent.withOpacity(0.1),
-                  shape: BoxShape.circle,
+                  color: Colors.black.withValues(alpha: 0.42),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                child: const Icon(
-                  Icons.local_pharmacy,
-                  color: AppColors.accent,
-                  size: 64,
+                child: Text(
+                  'Checking secure pharmacy network...',
+                  style: AppTextStyles.body.copyWith(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-            Text(
-              'StockAlert',
-              style: AppTextStyles.heading.copyWith(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Checking secure pharmacy network...',
-              style: AppTextStyles.body.copyWith(
-                color: AppColors.textSecondary,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

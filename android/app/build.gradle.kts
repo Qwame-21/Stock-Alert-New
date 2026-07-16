@@ -1,7 +1,47 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+fun googleMapsApiKey(): String {
+    val directKey = project.findProperty("MAPS_API_KEY_ANDROID") as? String
+    if (!directKey.isNullOrBlank()) return directKey
+
+    val dartDefines = project.findProperty("dart-defines") as? String
+    if (!dartDefines.isNullOrBlank()) {
+        for (encoded in dartDefines.split(",")) {
+            val define = try {
+                String(Base64.getDecoder().decode(encoded))
+            } catch (_: IllegalArgumentException) {
+                continue
+            }
+            if (define.startsWith("MAPS_API_KEY_ANDROID=")) {
+                val key = define.substringAfter("=")
+                if (key.isNotBlank()) return key
+            }
+        }
+    }
+
+    val envFile = rootProject.file("../.env")
+    if (envFile.exists()) {
+        envFile.useLines { lines ->
+            lines
+                .map { it.trim() }
+                .firstOrNull {
+                    it.startsWith("MAPS_API_KEY_ANDROID=") &&
+                        !it.startsWith("#")
+                }
+                ?.substringAfter("=")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { return it }
+        }
+    }
+
+    return ""
 }
 
 android {
@@ -24,12 +64,10 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Resolve the Google Maps API key placeholder used in AndroidManifest.xml.
-        // When running via `flutter run --dart-define=MAPS_API_KEY_ANDROID=...`, Flutter
-        // encodes dart-defines as a base64 Gradle property. We fall back to an empty
-        // string so the build never hard-fails when the flag is omitted.
-        val mapsApiKey = project.findProperty("MAPS_API_KEY_ANDROID") as? String ?: ""
-        manifestPlaceholders["MAPS_API_KEY_ANDROID"] = mapsApiKey
+        // Keep the native Maps SDK key aligned with the key visible to Dart.
+        // Prefer an explicit Gradle property, then Flutter dart-defines, then
+        // the project .env file used during local development.
+        manifestPlaceholders["MAPS_API_KEY_ANDROID"] = googleMapsApiKey()
     }
 
     buildTypes {

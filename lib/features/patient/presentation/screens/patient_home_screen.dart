@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/liquid_glass_card.dart';
+import '../../data/bookings_repository.dart';
+import '../../data/models/appointment.dart';
 
 class PatientHomeScreen extends StatelessWidget {
   final String patientName;
@@ -36,19 +38,38 @@ class PatientHomeScreen extends StatelessWidget {
                       Text(patientName, style: AppTextStyles.heading),
                     ],
                   ),
-                  InkWell(
-                    onTap: () => context.push('/patient/notifications'),
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.hairline),
+                  Row(
+                    children: [
+                      InkWell(
+                        onTap: () => context.push('/patient/search'),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.hairline),
+                          ),
+                          child: const Icon(Icons.search,
+                              color: AppColors.textSecondary, size: 20),
+                        ),
                       ),
-                      child: const Icon(Icons.notifications_none,
-                          color: AppColors.textSecondary, size: 20),
-                    ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => context.push('/patient/notifications'),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.hairline),
+                          ),
+                          child: const Icon(Icons.notifications_none,
+                              color: AppColors.textSecondary, size: 20),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -129,42 +150,7 @@ class PatientHomeScreen extends StatelessWidget {
                 ],
               ),
               SizedBox(height: 24),
-              Text('Upcoming Reminder', style: AppTextStyles.subheading),
-              SizedBox(height: 10),
-              InkWell(
-                onTap: () => context.push('/patient/notifications'),
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppColors.hairline),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.medication_liquid_outlined,
-                          color: AppColors.textSecondary, size: 20),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Vitamin C', style: AppTextStyles.subheading),
-                            Text('Take 1 tablet', style: AppTextStyles.body),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text('Tomorrow', style: AppTextStyles.label),
-                          Text('9:00 AM', style: AppTextStyles.label),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              const _UpcomingReminder(),
             ],
           ),
         ),
@@ -177,27 +163,119 @@ class PatientHomeScreen extends StatelessWidget {
               context.go('/patient/home');
               break;
             case 1:
-              context.go('/patient/search');
-              break;
-            case 2:
               context.go('/patient/nearby');
               break;
-            case 3:
+            case 2:
               context.go('/patient/bookings');
               break;
-            case 4:
+            case 3:
               context.go('/patient/profile');
               break;
           }
         },
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.search_outlined), selectedIcon: Icon(Icons.search), label: 'Search'),
-          NavigationDestination(icon: Icon(Icons.near_me_outlined), selectedIcon: Icon(Icons.near_me), label: 'Nearby'),
-          NavigationDestination(icon: Icon(Icons.calendar_today_outlined), selectedIcon: Icon(Icons.calendar_today), label: 'Bookings'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profile'),
+          NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: 'Home'),
+          NavigationDestination(
+              icon: Icon(Icons.near_me_outlined),
+              selectedIcon: Icon(Icons.near_me),
+              label: 'Nearby'),
+          NavigationDestination(
+              icon: Icon(Icons.calendar_today_outlined),
+              selectedIcon: Icon(Icons.calendar_today),
+              label: 'Bookings'),
+          NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: 'Profile'),
         ],
       ),
+    );
+  }
+}
+
+class _UpcomingReminder extends StatefulWidget {
+  const _UpcomingReminder();
+
+  @override
+  State<_UpcomingReminder> createState() => _UpcomingReminderState();
+}
+
+class _UpcomingReminderState extends State<_UpcomingReminder> {
+  late final Future<List<Appointment>> _future = BookingsRepository().load();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Appointment>>(
+      future: _future,
+      builder: (context, snapshot) {
+        final upcoming = snapshot.data == null || snapshot.data!.isEmpty
+            ? null
+            : snapshot.data!.first;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Upcoming reminder', style: AppTextStyles.subheading),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => context.push('/patient/notifications'),
+                  child: const Text('View all'),
+                ),
+              ],
+            ),
+            InkWell(
+              onTap: () => context.push(
+                upcoming == null
+                    ? '/patient/book-consultation'
+                    : '/patient/bookings',
+              ),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: AppColors.hairline),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: snapshot.connectionState == ConnectionState.waiting
+                    ? const Center(child: CircularProgressIndicator())
+                    : Row(
+                        children: [
+                          const Icon(Icons.event_available_outlined,
+                              color: AppColors.accent),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  upcoming?.doctorName ??
+                                      'No upcoming consultation',
+                                  style: AppTextStyles.subheading,
+                                ),
+                                Text(
+                                  upcoming == null
+                                      ? 'Book a consultation to create a reminder'
+                                      : '${upcoming.specialty} · ${upcoming.date}',
+                                  style: AppTextStyles.body,
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (upcoming != null)
+                            Text(upcoming.time, style: AppTextStyles.label),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -236,4 +314,3 @@ class _ActionTile extends StatelessWidget {
     );
   }
 }
-

@@ -1,43 +1,21 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+
 import '../../../../core/config/maps_config.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/stock_status_badge.dart';
-import '../../../onboarding/presentation/controllers/registration_cubit.dart';
-
-class NearbyPharmacy {
-  final String name;
-  final String distanceLabel;
-  final bool isOpen;
-  final StockLevel level;
-  final List<String> previewInventory;
-
-  /// Approximate coordinates used for real map pins.
-  /// Defaults to Accra city centre if not provided.
-  final double latitude;
-  final double longitude;
-
-  const NearbyPharmacy({
-    required this.name,
-    required this.distanceLabel,
-    required this.isOpen,
-    required this.level,
-    this.previewInventory = const [],
-    this.latitude = 5.6037,
-    this.longitude = -0.1870,
-  });
-}
+import '../../data/pharmacy_discovery_repository.dart';
 
 class LocatorScreen extends StatefulWidget {
-  final List<NearbyPharmacy> pharmacies;
+  final String? initialSearch;
   final String? highlightPharmacyName;
 
   const LocatorScreen({
     super.key,
-    required this.pharmacies,
+    this.initialSearch,
     this.highlightPharmacyName,
   });
 
@@ -46,151 +24,392 @@ class LocatorScreen extends StatefulWidget {
 }
 
 class _LocatorScreenState extends State<LocatorScreen> {
-  String? _expandedPharmacy;
-  GoogleMapController? _mapController;
-
-  // Default camera — Accra, Ghana
-  static const CameraPosition _defaultCamera = CameraPosition(
+  static const _defaultCamera = CameraPosition(
     target: LatLng(5.6037, -0.1870),
-    zoom: 14,
+    zoom: 12.5,
   );
 
-  Set<Marker> get _markers {
-    return {
-      for (final p in widget.pharmacies)
-        Marker(
-          markerId: MarkerId(p.name),
-          position: LatLng(p.latitude, p.longitude),
-          infoWindow: InfoWindow(
-            title: p.name,
-            snippet: '${p.distanceLabel} · ${p.isOpen ? "Open" : "Closed"}',
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            p.level == StockLevel.inStock
-                ? BitmapDescriptor.hueGreen
-                : p.level == StockLevel.lowStock
-                    ? BitmapDescriptor.hueOrange
-                    : BitmapDescriptor.hueRed,
-          ),
-          onTap: () => setState(() => _expandedPharmacy = p.name),
-        ),
-    };
-  }
+  final _repository = PharmacyDiscoveryRepository();
+  final _searchController = TextEditingController();
+  GoogleMapController? _mapController;
+  Timer? _searchDebounce;
+  List<DiscoveredPharmacy> _pharmacies = const [];
+  String? _selectedPharmacyId;
+  String? _error;
+  bool _isLoading = true;
+  bool _mapExpanded = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.highlightPharmacyName != null) {
-      _expandedPharmacy = widget.highlightPharmacyName;
+    _searchController.text = widget.initialSearch ?? '';
+    _loadPharmacies(_searchController.text);
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPharmacies([String query = '']) async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final results = await _repository.search(query);
+      if (!mounted) return;
+      setState(() {
+        _pharmacies = results;
+        _isLoading = false;
+        final highlighted = widget.highlightPharmacyName;
+        if (_selectedPharmacyId == null && highlighted != null) {
+          for (final pharmacy in results) {
+            if (pharmacy.name.toLowerCase() == highlighted.toLowerCase()) {
+              _selectedPharmacyId = pharmacy.id;
+              break;
+            }
+          }
+        }
+      });
+      await _fitMarkers();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = error.toString();
+      });
     }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 400),
+      () => _loadPharmacies(value),
+    );
+  }
+
+  Set<Marker> get _markers {
+    return _pharmacies.where((pharmacy) => pharmacy.hasCoordinates).map((p) {
+      final selected = p.id == _selectedPharmacyId;
+      return Marker(
+        markerId: MarkerId(p.id),
+        position: LatLng(p.latitude!, p.longitude!),
+        zIndexInt: selected ? 2 : 1,
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          selected
+              ? BitmapDescriptor.hueAzure
+              : p.stockLevel == StockLevel.inStock
+                  ? BitmapDescriptor.hueGreen
+                  : p.stockLevel == StockLevel.lowStock
+                      ? BitmapDescriptor.hueOrange
+                      : BitmapDescriptor.hueRed,
+        ),
+        infoWindow: InfoWindow(title: p.name, snippet: p.location),
+        onTap: () => _selectPharmacy(p),
+      );
+    }).toSet();
+  }
+
+  Future<void> _selectPharmacy(DiscoveredPharmacy pharmacy) async {
+    setState(() => _selectedPharmacyId = pharmacy.id);
+    if (pharmacy.hasCoordinates) {
+      await _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(pharmacy.latitude!, pharmacy.longitude!),
+          15,
+        ),
+      );
+    }
+  }
+
+  Future<void> _fitMarkers() async {
+    final controller = _mapController;
+    final points = _pharmacies
+        .where((pharmacy) => pharmacy.hasCoordinates)
+        .map((pharmacy) => LatLng(pharmacy.latitude!, pharmacy.longitude!))
+        .toList();
+    if (controller == null || points.isEmpty) return;
+    if (points.length == 1) {
+      await controller
+          .animateCamera(CameraUpdate.newLatLngZoom(points.first, 15));
+      return;
+    }
+    var south = points.first.latitude;
+    var north = points.first.latitude;
+    var west = points.first.longitude;
+    var east = points.first.longitude;
+    for (final point in points.skip(1)) {
+      south = point.latitude < south ? point.latitude : south;
+      north = point.latitude > north ? point.latitude : north;
+      west = point.longitude < west ? point.longitude : west;
+      east = point.longitude > east ? point.longitude : east;
+    }
+    await controller.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(south, west),
+          northeast: LatLng(north, east),
+        ),
+        64,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go('/patient/home'),
+        ),
+        title: Text('Nearby pharmacies', style: AppTextStyles.subheading),
+        actions: [
+          IconButton(
+            tooltip: _mapExpanded ? 'Show results' : 'Expand map',
+            onPressed: () => setState(() => _mapExpanded = !_mapExpanded),
+            icon: Icon(
+                _mapExpanded ? Icons.view_list_outlined : Icons.map_outlined),
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           Column(
             children: [
-              SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 20, 8),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-                        onPressed: () {
-                          if (Navigator.canPop(context)) {
-                            Navigator.pop(context);
-                          } else {
-                            final role = context.read<RegistrationCubit>().state.role;
-                            if (role == 'pharmacy') {
-                              context.go('/pharmacy/dashboard');
-                            } else {
-                              context.go('/patient/home');
-                            }
-                          }
-                        },
-                      ),
-                      Text('Nearby Pharmacies', style: AppTextStyles.subheading),
-                    ],
-                  ),
-                ),
+              _SearchPanel(
+                controller: _searchController,
+                isLoading: _isLoading,
+                onChanged: _onSearchChanged,
+                onClear: () {
+                  _searchController.clear();
+                  _loadPharmacies();
+                },
               ),
-              // ── Map layer ────────────────────────────────────────────────
               Expanded(
                 child: MapsConfig.hasKey
-                    ? _RealMap(
-                        camera: _defaultCamera,
+                    ? GoogleMap(
+                        initialCameraPosition: _defaultCamera,
                         markers: _markers,
-                        onMapCreated: (c) => _mapController = c,
+                        zoomControlsEnabled: false,
+                        mapToolbarEnabled: false,
+                        compassEnabled: true,
+                        myLocationEnabled: false,
+                        myLocationButtonEnabled: false,
+                        padding: EdgeInsets.only(
+                          bottom: _mapExpanded ? 24 : 230,
+                          right: 8,
+                        ),
+                        onMapCreated: (controller) {
+                          _mapController = controller;
+                          _fitMarkers();
+                        },
                       )
-                    : const _MapsUnavailablePlaceholder(),
+                    : const _MapUnavailable(),
               ),
             ],
           ),
-          // ── Bottom sheet ─────────────────────────────────────────────────
-          DraggableScrollableSheet(
-            initialChildSize: 0.45,
-            minChildSize: 0.25,
-            maxChildSize: 0.8,
-            builder: (context, scrollController) {
-              return Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 10,
-                      spreadRadius: 2,
+          Positioned(
+            right: 16,
+            top: 86,
+            child: _MapControls(
+              onZoomIn: () =>
+                  _mapController?.animateCamera(CameraUpdate.zoomIn()),
+              onZoomOut: () =>
+                  _mapController?.animateCamera(CameraUpdate.zoomOut()),
+              onFit: _fitMarkers,
+            ),
+          ),
+          if (!_mapExpanded)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: _ResultsSheet(
+                pharmacies: _pharmacies,
+                selectedId: _selectedPharmacyId,
+                isLoading: _isLoading,
+                error: _error,
+                onRetry: () => _loadPharmacies(_searchController.text),
+                onSelected: _selectPharmacy,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchPanel extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+  final bool isLoading;
+
+  const _SearchPanel({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+    required this.isLoading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Search pharmacy, location or medicine',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: isLoading
+              ? const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : controller.text.isNotEmpty
+                  ? IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: onClear,
+                      icon: const Icon(Icons.close),
+                    )
+                  : null,
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AppColors.hairline),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MapControls extends StatelessWidget {
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onFit;
+
+  const _MapControls({
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onFit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 4,
+      borderRadius: BorderRadius.circular(14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+              tooltip: 'Zoom in',
+              onPressed: onZoomIn,
+              icon: const Icon(Icons.add)),
+          const Divider(height: 1),
+          IconButton(
+              tooltip: 'Zoom out',
+              onPressed: onZoomOut,
+              icon: const Icon(Icons.remove)),
+          const Divider(height: 1),
+          IconButton(
+              tooltip: 'Show all',
+              onPressed: onFit,
+              icon: const Icon(Icons.center_focus_strong)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResultsSheet extends StatelessWidget {
+  final List<DiscoveredPharmacy> pharmacies;
+  final String? selectedId;
+  final bool isLoading;
+  final String? error;
+  final VoidCallback onRetry;
+  final ValueChanged<DiscoveredPharmacy> onSelected;
+
+  const _ResultsSheet({
+    required this.pharmacies,
+    required this.selectedId,
+    required this.isLoading,
+    required this.error,
+    required this.onRetry,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 230,
+      padding: const EdgeInsets.fromLTRB(16, 12, 0, 16),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 16)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16, bottom: 10),
+            child: Row(
+              children: [
+                Text('${pharmacies.length} pharmacies',
+                    style: AppTextStyles.subheading),
+                const Spacer(),
+                Text('Live inventory',
+                    style: AppTextStyles.label
+                        .copyWith(color: AppColors.statusGood)),
+              ],
+            ),
+          ),
+          Expanded(
+            child: error != null
+                ? Center(
+                    child: TextButton.icon(
+                      onPressed: onRetry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Could not load results. Retry'),
                     ),
-                  ],
-                ),
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: AppColors.hairline,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                    for (final pharmacy in widget.pharmacies) ...[
-                      _PharmacyRow(
-                        pharmacy: pharmacy,
-                        isExpanded: _expandedPharmacy == pharmacy.name,
-                        onTap: () {
-                          setState(() {
-                            _expandedPharmacy =
-                                _expandedPharmacy == pharmacy.name
-                                    ? null
-                                    : pharmacy.name;
-                          });
-                          // Pan real map to selected pharmacy
-                          if (MapsConfig.hasKey && _mapController != null) {
-                            _mapController!.animateCamera(
-                              CameraUpdate.newLatLng(
-                                LatLng(pharmacy.latitude, pharmacy.longitude),
-                              ),
-                            );
-                          }
+                  )
+                : !isLoading && pharmacies.isEmpty
+                    ? Center(
+                        child: Text('No matching pharmacies found.',
+                            style: AppTextStyles.body))
+                    : ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: pharmacies.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 10),
+                        itemBuilder: (context, index) {
+                          final pharmacy = pharmacies[index];
+                          return _PharmacyCard(
+                            pharmacy: pharmacy,
+                            selected: pharmacy.id == selectedId,
+                            onTap: () => onSelected(pharmacy),
+                          );
                         },
                       ),
-                      SizedBox(height: 12),
-                    ],
-                  ],
-                ),
-              );
-            },
           ),
         ],
       ),
@@ -198,154 +417,60 @@ class _LocatorScreenState extends State<LocatorScreen> {
   }
 }
 
-// ── Real map widget ───────────────────────────────────────────────────────────
-
-class _RealMap extends StatelessWidget {
-  final CameraPosition camera;
-  final Set<Marker> markers;
-  final void Function(GoogleMapController) onMapCreated;
-
-  const _RealMap({
-    required this.camera,
-    required this.markers,
-    required this.onMapCreated,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GoogleMap(
-      initialCameraPosition: camera,
-      markers: markers,
-      myLocationEnabled: true,
-      myLocationButtonEnabled: true,
-      zoomControlsEnabled: false,
-      onMapCreated: onMapCreated,
-    );
-  }
-}
-
-class _MapsUnavailablePlaceholder extends StatelessWidget {
-  const _MapsUnavailablePlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: const Color(0xFFF2F2F2),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.map_outlined, color: AppColors.textSecondary.withValues(alpha: 0.5), size: 40),
-            const SizedBox(height: 12),
-            Text(
-              'Map unavailable',
-              style: AppTextStyles.label.copyWith(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Pharmacy list row ─────────────────────────────────────────────────────────
-
-class _PharmacyRow extends StatelessWidget {
-  final NearbyPharmacy pharmacy;
-  final bool isExpanded;
+class _PharmacyCard extends StatelessWidget {
+  final DiscoveredPharmacy pharmacy;
+  final bool selected;
   final VoidCallback onTap;
 
-  const _PharmacyRow({
+  const _PharmacyCard({
     required this.pharmacy,
-    required this.isExpanded,
+    required this.selected,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(
-            color: isExpanded ? AppColors.accent : AppColors.hairline),
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.white,
-      ),
+    final available =
+        pharmacy.medicines.where((item) => item.quantity > 0).toList();
+    return SizedBox(
+      width: 270,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.accent.withValues(alpha: 0.06)
+                : Colors.white,
+            border: Border.all(
+                color: selected ? AppColors.accent : AppColors.hairline),
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Icon(Icons.location_on_outlined,
-                      color: AppColors.textSecondary),
-                  SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(pharmacy.name, style: AppTextStyles.subheading),
-                        Text(
-                          '${pharmacy.distanceLabel} · ${pharmacy.isOpen ? "Open" : "Closed"}',
-                          style: AppTextStyles.body,
-                        ),
-                      ],
-                    ),
-                  ),
-                  StockStatusBadge(level: pharmacy.level),
+                      child: Text(pharmacy.name,
+                          style: AppTextStyles.subheading, maxLines: 1)),
+                  StockStatusBadge(level: pharmacy.stockLevel),
                 ],
               ),
-              if (isExpanded) ...[
-                const Divider(height: 24, color: AppColors.hairline),
-                Text(
-                  'Relevant Inventory:',
-                  style: AppTextStyles.label
-                      .copyWith(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 8),
-                if (pharmacy.previewInventory.isNotEmpty)
-                  ...pharmacy.previewInventory.map((item) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(item, style: AppTextStyles.body),
-                          StockStatusBadge(level: pharmacy.level),
-                        ],
-                      ),
-                    );
-                  })
-                else ...[
-                  Padding(
-                    padding: EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Amoxicillin 500mg', style: AppTextStyles.body),
-                        StockStatusBadge(level: StockLevel.inStock),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Ibuprofen 400mg', style: AppTextStyles.body),
-                        StockStatusBadge(level: StockLevel.inStock),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
+              const SizedBox(height: 6),
+              Text(pharmacy.location, style: AppTextStyles.body, maxLines: 1),
+              const Spacer(),
+              Text(
+                available.isEmpty
+                    ? 'No available stock listed'
+                    : '${available.length} medicine${available.length == 1 ? '' : 's'} available',
+                style: AppTextStyles.label,
+              ),
+              if (!pharmacy.hasCoordinates)
+                Text('Location pin unavailable',
+                    style: AppTextStyles.label
+                        .copyWith(color: AppColors.statusWarning)),
             ],
           ),
         ),
@@ -354,4 +479,21 @@ class _PharmacyRow extends StatelessWidget {
   }
 }
 
+class _MapUnavailable extends StatelessWidget {
+  const _MapUnavailable();
 
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.map_outlined,
+              size: 44, color: AppColors.textSecondary),
+          const SizedBox(height: 10),
+          Text('Google Maps is not configured.', style: AppTextStyles.body),
+        ],
+      ),
+    );
+  }
+}

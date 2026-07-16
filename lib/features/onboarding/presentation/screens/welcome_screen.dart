@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../../../core/theme/app_theme.dart';
 
 class WelcomeScreen extends StatelessWidget {
@@ -9,156 +10,153 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final imageHeight = screenHeight * 0.58;
-
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          // ── Top portion with the photo and a custom jagged edge transition ──
-          Stack(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxHeight < 700;
+          final panelHeight = constraints.maxHeight * (compact ? 0.43 : 0.40);
+
+          return Stack(
+            fit: StackFit.expand,
             children: [
-              ClipPath(
-                clipper: _TornEdgeClipper(),
-                child: Container(
-                  height: imageHeight,
-                  width: double.infinity,
-                  color: AppColors.hairline,
-                  child: Image.asset(
-                    'assets/images/welcome_pharmacy.jpg',
-                    fit: BoxFit.cover,
-                    alignment: Alignment.center,
+              Image.asset(
+                'assets/images/welcome_pharmacy.jpg',
+                fit: BoxFit.cover,
+                alignment: const Alignment(0.12, -0.18),
+              ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0, 0.28, 0.64, 1],
+                    colors: [
+                      Color(0x99000000),
+                      Color(0x14000000),
+                      Color(0xB8000000),
+                      Color(0xE6000000),
+                    ],
                   ),
                 ),
               ),
-              // Subtle dark gradient overlay to blend into the photo
-              ClipPath(
-                clipper: _TornEdgeClipper(),
+              SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'StockAlert',
+                            style: AppTextStyles.subheading.copyWith(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.bottomCenter,
                 child: Container(
-                  height: imageHeight,
                   width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.15),
-                        Colors.black.withOpacity(0.0),
+                  height: panelHeight,
+                  padding: EdgeInsets.fromLTRB(
+                    28,
+                    compact ? 28 : 34,
+                    28,
+                    0,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(28),
+                      topRight: Radius.circular(96),
+                    ),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Care, connected.',
+                          style: AppTextStyles.heading.copyWith(
+                            fontSize: compact ? 24 : 27,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Find trusted pharmacies, check medicine availability, '
+                          'and manage your care in one secure place.',
+                          style: AppTextStyles.body.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: compact ? 13 : 14,
+                            height: 1.55,
+                          ),
+                        ),
+                        const Spacer(),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 54,
+                          child: ElevatedButton(
+                            onPressed: onGetStarted,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.accent,
+                              shape: const StadiumBorder(),
+                            ),
+                            child: const Text('Get Started'),
+                          ),
+                        ),
+                        SizedBox(height: compact ? 12 : 16),
+                        Center(
+                          child: TextButton(
+                            onPressed: () => context.push('/login'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.textSecondary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            child: Text.rich(
+                              const TextSpan(
+                                text: 'Already have an account?  ',
+                                children: [
+                                  TextSpan(
+                                    text: 'Log in',
+                                    style: TextStyle(
+                                      color: AppColors.accent,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              style: AppTextStyles.body.copyWith(fontSize: 13),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: compact ? 4 : 8),
                       ],
                     ),
                   ),
                 ),
               ),
             ],
-          ),
-
-          // ── Clean bottom content area ────────────────────────────────────
-          Expanded(
-            child: Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: [
-                  const Spacer(flex: 2),
-                  // App Title
-                  Text(
-                    'StockAlert',
-                    style: AppTextStyles.heading.copyWith(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  // Tagline
-                  Text(
-                    'Helping communities access safe medicine.',
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.body.copyWith(
-                      fontSize: 16,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const Spacer(flex: 3),
-                  // Primary Get Started Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: onGetStarted,
-                      child: const Text('Get Started'),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Legible & tappable secondary Log In option
-                  GestureDetector(
-                    onTap: () => context.push('/login'),
-                    child: RichText(
-                      text: TextSpan(
-                        style: AppTextStyles.body.copyWith(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                        children: [
-                          const TextSpan(text: 'Already have an account? '),
-                          TextSpan(
-                            text: 'Log In',
-                            style: TextStyle(
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.bold,
-                              decoration: TextDecoration.underline,
-                              decorationColor: AppColors.accent,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const Spacer(flex: 2),
-                  // Subtle horizontal home indicator bar
-                  Container(
-                    width: 140,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: AppColors.textSecondary.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 }
 
-/// Draws a premium jagged/torn-paper zigzag edge at the bottom of the container
-class _TornEdgeClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    final path = Path();
-    path.lineTo(0, size.height - 15);
-
-    // Number of zigzag segments across screen width
-    const segments = 24;
-    final segmentWidth = size.width / segments;
-
-    for (var i = 0; i < segments; i++) {
-      final x1 = (i * segmentWidth) + (segmentWidth / 2);
-      final y1 = size.height - (i % 2 == 0 ? 5 : 25);
-      final x2 = (i + 1) * segmentWidth;
-      final y2 = size.height - 15;
-
-      path.quadraticBezierTo(x1, y1, x2, y2);
-    }
-
-    path.lineTo(size.width, 0);
-    path.close();
-    return path;
-  }
-
-  @override
-  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
-}

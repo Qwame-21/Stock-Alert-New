@@ -1,21 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
 import '../../../../core/theme/app_theme.dart';
-
-class AppNotification {
-  final String id;
-  final String type; // 'Expiry' | 'Appointments' | 'Orders' | 'Refills'
-  final String title;
-  final String description;
-  final String time;
-
-  const AppNotification({
-    required this.id,
-    required this.type,
-    required this.title,
-    required this.description,
-    required this.time,
-  });
-}
+import '../../data/notifications_repository.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -25,152 +12,169 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  final List<AppNotification> _notifications = [
-    const AppNotification(
-      id: 'n1',
-      type: 'Expiry',
-      title: 'Amoxicillin Expiry Warning',
-      description: 'Batch #AMX-09 expires in 12 days. Prepare returns.',
-      time: '2 hours ago',
-    ),
-    const AppNotification(
-      id: 'n2',
-      type: 'Appointments',
-      title: 'Consultation Confirmed',
-      description: 'Your booking with Dr. Emmanuel Boateng is confirmed for July 15.',
-      time: '1 day ago',
-    ),
-    const AppNotification(
-      id: 'n3',
-      type: 'Refills',
-      title: 'Vitamin C Refill Reminder',
-      description: 'Typical refill schedule suggests you might need Vitamin C. Tap to search.',
-      time: '2 days ago',
-    ),
-    const AppNotification(
-      id: 'n4',
-      type: 'Orders',
-      title: 'Supplier Order Shipped',
-      description: 'Order #ORD-893 has been shipped by Standard Wholesales.',
-      time: '3 days ago',
-    ),
-  ];
+  final _repository = NotificationsRepository();
+  List<PatientNotification> _notifications = const [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final results = await _repository.load();
+      if (!mounted) return;
+      setState(() {
+        _notifications = results;
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _clearAll() {
+    if (_notifications.isEmpty) return;
+    setState(() => _notifications = const []);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Notifications cleared from this view.')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Group notifications by type
-    final Map<String, List<AppNotification>> grouped = {};
-    for (final notif in _notifications) {
-      grouped.putIfAbsent(notif.type, () => []).add(notif);
-    }
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
         elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
+        leading: const BackButton(),
         title: Text('Notifications', style: AppTextStyles.subheading),
+        actions: [
+          TextButton(
+            onPressed: _notifications.isEmpty ? null : _clearAll,
+            child: const Text('Clear all'),
+          ),
+        ],
       ),
-      body: _notifications.isEmpty
-          ? Center(
-              child: Text('All notifications archived.', style: AppTextStyles.body),
-            )
-          : ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              children: grouped.keys.map((groupTitle) {
-                final list = grouped[groupTitle]!;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: FilledButton.icon(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                )
+              : _notifications.isEmpty
+                  ? Center(
                       child: Text(
-                        groupTitle.toUpperCase(),
-                        style: AppTextStyles.label.copyWith(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.0,
-                          color: AppColors.accent,
-                        ),
+                        'You are all caught up.',
+                        style: AppTextStyles.body,
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _notifications.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          final notification = _notifications[index];
+                          return Dismissible(
+                            key: ValueKey(notification.id),
+                            direction: DismissDirection.endToStart,
+                            onDismissed: (_) => setState(
+                              () => _notifications.removeAt(index),
+                            ),
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              decoration: BoxDecoration(
+                                color: AppColors.statusBad,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child:
+                                  const Icon(Icons.clear, color: Colors.white),
+                            ),
+                            child:
+                                _NotificationCard(notification: notification),
+                          );
+                        },
                       ),
                     ),
-                    ...list.map((notif) {
-                      return Padding(
-                        key: ValueKey(notif.id),
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Dismissible(
-                          key: ValueKey(notif.id),
-                          direction: DismissDirection.endToStart,
-                          onDismissed: (direction) {
-                            setState(() {
-                              _notifications.removeWhere((item) => item.id == notif.id);
-                            });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Notification archived')),
-                            );
-                          },
-                          background: Container(
-                            alignment: Alignment.centerRight,
-                            padding: const EdgeInsets.only(right: 20),
-                            decoration: BoxDecoration(
-                              color: AppColors.statusBad,
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Icon(Icons.archive_outlined, color: Colors.white),
-                          ),
-                          child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              border: Border.all(color: AppColors.hairline),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  _getIconForType(notif.type),
-                                  color: AppColors.textSecondary,
-                                  size: 20,
-                                ),
-                                SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(notif.title, style: AppTextStyles.subheading),
-                                      SizedBox(height: 4),
-                                      Text(notif.description, style: AppTextStyles.body),
-                                      SizedBox(height: 6),
-                                      Text(notif.time, style: AppTextStyles.label.copyWith(fontSize: 10)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
-                );
-              }).toList(),
-            ),
     );
   }
+}
 
-  IconData _getIconForType(String type) {
-    switch (type) {
-      case 'Expiry':
-        return Icons.warning_amber_outlined;
-      case 'Appointments':
-        return Icons.event_available_outlined;
-      case 'Orders':
-        return Icons.local_shipping_outlined;
-      case 'Refills':
-        return Icons.autorenew;
-      default:
-        return Icons.notifications_none;
-    }
+class _NotificationCard extends StatelessWidget {
+  final PatientNotification notification;
+
+  const _NotificationCard({required this.notification});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheduled = notification.scheduledAt;
+    final dateLabel = scheduled == null
+        ? null
+        : '${scheduled.day}/${scheduled.month}/${scheduled.year} · '
+            '${scheduled.hour.toString().padLeft(2, '0')}:'
+            '${scheduled.minute.toString().padLeft(2, '0')}';
+    return InkWell(
+      onTap: notification.actionPath == null
+          ? null
+          : () => context.push(notification.actionPath!),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: AppColors.hairline),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.event_available_outlined,
+                  color: AppColors.accent),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(notification.title, style: AppTextStyles.subheading),
+                  const SizedBox(height: 4),
+                  Text(notification.description, style: AppTextStyles.body),
+                  if (dateLabel != null) ...[
+                    const SizedBox(height: 8),
+                    Text(dateLabel, style: AppTextStyles.label),
+                  ],
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+          ],
+        ),
+      ),
+    );
   }
 }
