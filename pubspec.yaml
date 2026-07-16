@@ -1,0 +1,51 @@
+name: stockalert
+description: Community pharmacy inventory and patient dispensing companion app.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # state management
+  flutter_bloc: ^8.1.5
+
+  # local db (offline-first cache)
+  sqflite: ^2.3.3
+  path: ^1.9.0
+
+  # secure storage for tokens / keys - never put these in sqflite
+  flutter_secure_storage: ^9.2.2
+
+  # backend
+  supabase_flutter: ^2.16.0
+
+  # qr generation for the identity tag
+  qr_flutter: ^4.1.0
+
+  # unique ids for local records before they're synced
+  uuid: ^4.4.0
+
+  # routing
+  go_router: ^14.2.0
+
+  # google fonts for premium typography (Poppins)
+  google_fonts: ^6.2.1
+
+  # map for the pharmacy locator screen
+  google_maps_flutter: ^2.9.0
+  image_picker: ^1.2.3
+  google_sign_in: ^7.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
