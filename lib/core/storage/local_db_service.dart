@@ -24,7 +24,7 @@ class LocalDbService {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -66,6 +66,25 @@ class LocalDbService {
         if (oldVersion < 6) {
           await _addColumnIfMissing(db, 'bookings', 'providerId', 'TEXT');
         }
+        if (oldVersion < 7) {
+          for (final column in const {
+            'quantity': 'INTEGER NOT NULL DEFAULT 0',
+            'version': 'INTEGER NOT NULL DEFAULT 1',
+            'barcode': "TEXT NOT NULL DEFAULT ''",
+            'batchNumber': "TEXT NOT NULL DEFAULT ''",
+            'genericName': "TEXT NOT NULL DEFAULT ''",
+            'brandName': "TEXT NOT NULL DEFAULT ''",
+            'strength': "TEXT NOT NULL DEFAULT ''",
+            'dosageForm': "TEXT NOT NULL DEFAULT ''",
+            'manufacturer': "TEXT NOT NULL DEFAULT ''",
+            'reorderLevel': 'INTEGER NOT NULL DEFAULT 0',
+            'unitPrice': 'REAL',
+            'currency': "TEXT NOT NULL DEFAULT 'GHS'",
+          }.entries) {
+            await _addColumnIfMissing(
+                db, 'inventory', column.key, column.value);
+          }
+        }
       },
     );
   }
@@ -88,8 +107,14 @@ class LocalDbService {
   Future<void> _createTables(Database db) async {
     await db.execute(
         'CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value TEXT)');
-    await db.execute(
-        'CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, name TEXT, expiry TEXT, level TEXT)');
+    await db.execute('''CREATE TABLE IF NOT EXISTS inventory (
+          id TEXT PRIMARY KEY, name TEXT, expiry TEXT, level TEXT,
+          quantity INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1,
+          barcode TEXT NOT NULL DEFAULT '', batchNumber TEXT NOT NULL DEFAULT '',
+          genericName TEXT NOT NULL DEFAULT '', brandName TEXT NOT NULL DEFAULT '',
+          strength TEXT NOT NULL DEFAULT '', dosageForm TEXT NOT NULL DEFAULT '',
+          manufacturer TEXT NOT NULL DEFAULT '', reorderLevel INTEGER NOT NULL DEFAULT 0,
+          unitPrice REAL, currency TEXT NOT NULL DEFAULT 'GHS')''');
     await db.execute(
         'CREATE TABLE IF NOT EXISTS bookings (id TEXT PRIMARY KEY, doctorName TEXT, specialty TEXT, date TEXT, time TEXT, avatarUrl TEXT, videoLink TEXT, notes TEXT, version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT "pending", providerId TEXT)');
     await db.execute(

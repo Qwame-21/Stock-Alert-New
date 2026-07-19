@@ -178,6 +178,8 @@ const _sensitiveApiLogKeys = {
   'accessToken',
   'refreshToken',
   'token',
+  'qrToken',
+  'qr_token',
   'documentPath',
   'document_path',
   'knownAllergies',

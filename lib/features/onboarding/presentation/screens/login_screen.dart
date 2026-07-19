@@ -11,7 +11,8 @@ import '../controllers/registration_cubit.dart';
 
 class LoginScreen extends StatefulWidget {
   final String? expiredMessage;
-  const LoginScreen({super.key, this.expiredMessage});
+  final String? selectedRole;
+  const LoginScreen({super.key, this.expiredMessage, this.selectedRole});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -22,6 +23,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordCtrl = TextEditingController();
   bool _obscurePassword = true;
   bool _biometricsEnabled = false;
+  bool _isLoggingIn = false;
+  bool _isBiometricLoading = false;
 
   // Throttling logic
   int _failedAttempts = 0;
@@ -110,6 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
+    if (_isLoggingIn || _cooldownSeconds > 0) return;
     final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
 
@@ -118,6 +122,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (_emailError != null || _passwordError != null) return;
 
+    setState(() => _isLoggingIn = true);
+    var authenticated = false;
     try {
       // A manual login is not a password-recovery session.
       await LocalDbService().delete('password_reset_pending');
@@ -132,10 +138,25 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user == null) {
         throw const AuthException('Login failed. No user returned.');
       }
+      authenticated = true;
 
       final profile = await ProfileRepository().getMe();
 
-      final role = profile['role'] as String? ?? 'patient';
+      final role = profile['role'] as String?;
+      if (role == null || !{'patient', 'pharmacy', 'provider'}.contains(role)) {
+        await Supabase.instance.client.auth.signOut();
+        authenticated = false;
+        throw const AuthException(
+          'Account setup is incomplete. Return to registration, choose your account type, and submit the same email and password to repair it.',
+        );
+      }
+      if (widget.selectedRole != null && role != widget.selectedRole) {
+        await Supabase.instance.client.auth.signOut();
+        authenticated = false;
+        throw AuthException(
+          'This account is registered as ${_roleName(role)}, not ${_roleName(widget.selectedRole!)}.',
+        );
+      }
 
       // Hydrate Cubit so the rest of the app has profile data
       if (mounted) {
@@ -207,15 +228,29 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
+      // When credentials were valid, keep the session so a transient profile
+      // or network failure can be retried without authenticating again.
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('An unexpected error occurred. Please try again.'),
+        SnackBar(
+          content: Text(
+            authenticated
+                ? 'You are signed in, but your account profile could not be loaded. Check the backend connection and tap Log in again.'
+                : 'Login could not finish: ${e.toString().replaceFirst('Exception: ', '')}',
+          ),
           backgroundColor: AppColors.statusBad,
         ),
       );
+    } finally {
+      if (mounted) setState(() => _isLoggingIn = false);
     }
   }
+
+  String _roleName(String role) => switch (role) {
+        'pharmacy' => 'Community Pharmacy',
+        'provider' => 'Consultation Provider',
+        _ => 'Patient',
+      };
 
   Future<void> _showForgotPasswordDialog() async {
     final resetEmailCtrl = TextEditingController(text: _emailCtrl.text.trim());
@@ -322,31 +357,43 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleBiometricLogin() async {
-    if (!_biometricsEnabled) return;
-    final authenticated = await LocalAuthentication().authenticate(
-      localizedReason: 'Authenticate to open StockAlert',
-      options: const AuthenticationOptions(biometricOnly: true),
-    );
-    if (!authenticated || !mounted) return;
-    if (Supabase.instance.client.auth.currentSession == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Your saved session expired. Use your password.'),
-          backgroundColor: AppColors.statusWarning,
-        ),
+    if (_isBiometricLoading) return;
+    setState(() => _isBiometricLoading = true);
+    try {
+      if (!_biometricsEnabled) return;
+      final authenticated = await LocalAuthentication().authenticate(
+        localizedReason: 'Authenticate to open StockAlert',
+        options: const AuthenticationOptions(biometricOnly: true),
       );
-      return;
+      if (!authenticated || !mounted) return;
+      if (Supabase.instance.client.auth.currentSession == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your saved session expired. Use your password.'),
+            backgroundColor: AppColors.statusWarning,
+          ),
+        );
+        return;
+      }
+      final profile = await ProfileRepository().getMe();
+      if (!mounted) return;
+      final role = profile['role'] as String? ?? 'patient';
+      context.go(
+        role == 'patient'
+            ? '/patient/home'
+            : role == 'provider'
+                ? '/provider/dashboard'
+                : '/pharmacy/dashboard',
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Biometric login failed: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isBiometricLoading = false);
     }
-    final profile = await ProfileRepository().getMe();
-    if (!mounted) return;
-    final role = profile['role'] as String? ?? 'patient';
-    context.go(
-      role == 'patient'
-          ? '/patient/home'
-          : role == 'provider'
-              ? '/provider/dashboard'
-              : '/pharmacy/dashboard',
-    );
   }
 
   @override
@@ -358,7 +405,11 @@ class _LoginScreenState extends State<LoginScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.background,
         elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
+        leading: IconButton(
+          tooltip: 'Back to welcome',
+          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          onPressed: () => context.go('/'),
+        ),
         title: Text('Log In', style: AppTextStyles.subheading),
       ),
       body: SingleChildScrollView(
@@ -369,9 +420,21 @@ class _LoginScreenState extends State<LoginScreen> {
             Text('Welcome Back', style: AppTextStyles.heading),
             const SizedBox(height: 6),
             Text(
-              'Enter your email and password or use biometrics to continue.',
+              widget.selectedRole == null
+                  ? 'Enter your email and password or use biometrics to continue.'
+                  : 'Continue to the ${_roleName(widget.selectedRole!)} workspace.',
               style: AppTextStyles.body,
             ),
+            if (widget.selectedRole != null) ...[
+              const SizedBox(height: 12),
+              ActionChip(
+                avatar: const Icon(Icons.badge_outlined, size: 18),
+                label: Text('${_roleName(widget.selectedRole!)} account'),
+                onPressed: _isLoggingIn
+                    ? null
+                    : () => context.go('/choose-role?mode=login'),
+              ),
+            ],
             const SizedBox(height: 32),
             const _FieldLabel('Email Address', isRequired: true),
             _AppTextField(
@@ -415,8 +478,16 @@ class _LoginScreenState extends State<LoginScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: isCooldown ? null : _handleLogin,
-                child: const Text('Log In'),
+                onPressed: isCooldown || _isLoggingIn ? null : _handleLogin,
+                child: _isLoggingIn
+                    ? const SizedBox.square(
+                        dimension: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Log In'),
               ),
             ),
             if (_biometricsEnabled) ...[
@@ -429,9 +500,18 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 16),
               Center(
                 child: OutlinedButton.icon(
-                  onPressed: isCooldown ? null : _handleBiometricLogin,
-                  icon: const Icon(Icons.fingerprint, size: 24),
-                  label: const Text('Log in with Biometrics'),
+                  onPressed: isCooldown || _isBiometricLoading
+                      ? null
+                      : _handleBiometricLogin,
+                  icon: _isBiometricLoading
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.fingerprint, size: 24),
+                  label: Text(_isBiometricLoading
+                      ? 'Checking…'
+                      : 'Log in with Biometrics'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.accent,
                     side: const BorderSide(color: AppColors.accent),
@@ -444,6 +524,22 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
             ],
+            const SizedBox(height: 28),
+            Center(
+              child: Text('Need a different type of account?',
+                  style: AppTextStyles.body),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isLoggingIn
+                    ? null
+                    : () => context.go('/choose-role?mode=login'),
+                icon: const Icon(Icons.groups_outlined),
+                label: const Text('Choose or create an account type'),
+              ),
+            ),
           ],
         ),
       ),

@@ -57,9 +57,23 @@ class InventoryRepository {
       if (pharmacyId == null || pharmacyId.isEmpty) return medicine;
       final payload = {
         'pharmacyId': pharmacyId,
-        'medicine': {'name': medicine.name},
+        'medicine': {
+          'name': medicine.name,
+          if (medicine.genericName.isNotEmpty)
+            'genericName': medicine.genericName,
+          if (medicine.brandName.isNotEmpty) 'brandName': medicine.brandName,
+          if (medicine.strength.isNotEmpty) 'strength': medicine.strength,
+          if (medicine.dosageForm.isNotEmpty) 'dosageForm': medicine.dosageForm,
+          if (medicine.barcode.isNotEmpty) 'barcode': medicine.barcode,
+          if (medicine.manufacturer.isNotEmpty)
+            'manufacturer': medicine.manufacturer,
+        },
+        'batchNumber': medicine.batchNumber,
         'quantity': medicine.quantity,
+        'reorderLevel': medicine.reorderLevel,
         'expiryDate': medicine.expiry.isEmpty ? null : medicine.expiry,
+        'unitPrice': medicine.unitPrice,
+        'currency': medicine.currency,
       };
       final response = await _api.post('/api/v1/inventory', body: {
         'mutationId': mutationId,
@@ -81,9 +95,24 @@ class InventoryRepository {
         'entityId': null,
         'payload': {
           'pharmacyId': pharmacyId,
-          'medicine': {'name': medicine.name},
+          'medicine': {
+            'name': medicine.name,
+            if (medicine.genericName.isNotEmpty)
+              'genericName': medicine.genericName,
+            if (medicine.brandName.isNotEmpty) 'brandName': medicine.brandName,
+            if (medicine.strength.isNotEmpty) 'strength': medicine.strength,
+            if (medicine.dosageForm.isNotEmpty)
+              'dosageForm': medicine.dosageForm,
+            if (medicine.barcode.isNotEmpty) 'barcode': medicine.barcode,
+            if (medicine.manufacturer.isNotEmpty)
+              'manufacturer': medicine.manufacturer,
+          },
+          'batchNumber': medicine.batchNumber,
           'quantity': medicine.quantity,
+          'reorderLevel': medicine.reorderLevel,
           'expiryDate': medicine.expiry.isEmpty ? null : medicine.expiry,
+          'unitPrice': medicine.unitPrice,
+          'currency': medicine.currency,
         },
       });
       if (ApiConfig.backgroundSyncEnabled) {

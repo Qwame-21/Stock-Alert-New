@@ -413,4 +413,16 @@ class RegistrationCubit extends Cubit<RegistrationState> {
   void updatePassword(String password) {
     emit(state.copyWith(password: password));
   }
+
+  void updateAccountCredentials({
+    required String email,
+    required String phoneNumber,
+    required String password,
+  }) {
+    emit(state.copyWith(
+      email: email,
+      phoneNumber: phoneNumber,
+      password: password,
+    ));
+  }
 }

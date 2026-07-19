@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/storage/local_db_service.dart';
 import '../../../onboarding/data/profile_repository.dart';
 import '../../../onboarding/presentation/controllers/registration_cubit.dart';
 
@@ -30,27 +32,31 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
   void initState() {
     super.initState();
     final state = context.read<RegistrationCubit>().state;
-    _pharmacyNameCtrl.text =
-        state.pharmacyName.isNotEmpty ? state.pharmacyName : 'Green Pharmacy';
-    _licenseCtrl.text =
-        state.licenseNumber.isNotEmpty ? state.licenseNumber : 'PHA-90210-X';
-    _locationCtrl.text =
-        state.location.isNotEmpty ? state.location : 'Spintex Road, Accra';
-    _authorityCtrl.text = state.registrationAuthority.isNotEmpty
-        ? state.registrationAuthority
-        : 'Pharmacy Council of Ghana';
-    _hoursCtrl.text = state.operatingHours.isNotEmpty
-        ? state.operatingHours
-        : '8:00 AM - 9:00 PM';
-    _supplierCtrl.text = state.supplierPreference.isNotEmpty
-        ? state.supplierPreference
-        : 'Standard Wholesales Ltd';
+    _pharmacyNameCtrl.text = state.pharmacyName;
+    _licenseCtrl.text = state.licenseNumber;
+    _locationCtrl.text = state.location;
+    _authorityCtrl.text = state.registrationAuthority;
+    _hoursCtrl.text = state.operatingHours;
+    _supplierCtrl.text = state.supplierPreference;
     _loadPreferences();
   }
 
   Future<void> _loadPreferences() async {
-    // Alert preferences will be stored in Supabase profile in a future pass.
-    // Defaults retained for now.
+    final db = LocalDbService();
+    final low = await db.read('pharmacy_low_stock_alerts');
+    final expiry = await db.read('pharmacy_expiry_alerts');
+    try {
+      final profile = await ProfileRepository().getMe();
+      _pharmacyNameCtrl.text = profile['pharmacy_name'] as String? ?? '';
+      _licenseCtrl.text = profile['license_number'] as String? ?? '';
+      _locationCtrl.text = profile['location'] as String? ?? '';
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _alertOnLowStock = low != 'false';
+        _alertOnExpiry = expiry != 'false';
+      });
+    }
   }
 
   @override
@@ -99,12 +105,44 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
 
   Future<void> _toggleLowStock(bool value) async {
     setState(() => _alertOnLowStock = value);
-    // Alert preference persistence via Supabase coming in a future pass
+    await LocalDbService().write('pharmacy_low_stock_alerts', '$value');
   }
 
   Future<void> _toggleExpiry(bool value) async {
     setState(() => _alertOnExpiry = value);
-    // Alert preference persistence via Supabase coming in a future pass
+    await LocalDbService().write('pharmacy_expiry_alerts', '$value');
+  }
+
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                  title: const Text('Delete pharmacy account?'),
+                  content: const Text(
+                      'This permanently removes the account and access to its StockAlert workspace. This cannot be undone.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.statusBad),
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Delete permanently'))
+                  ],
+                )) ??
+        false;
+    if (!confirmed) return;
+    try {
+      await ApiClient.instance.delete('/api/v1/account');
+      await Supabase.instance.client.auth.signOut();
+      if (mounted) context.go('/');
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+      }
+    }
   }
 
   void _confirmLogout() {
@@ -136,87 +174,11 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
                 }
                 if (!mounted) return;
                 registrationCubit.reset();
-                this.context.go('/login');
+                this.context.go('/login?switching=true');
               },
               child: const Text('Log Out',
                   style: TextStyle(
                       color: AppColors.statusBad, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showStaffDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Staff Accounts'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              ListTile(
-                leading: CircleAvatar(child: Text('EA')),
-                title: Text('Emmanuel Ampadu'),
-                subtitle: Text('Admin / Pharmacist'),
-              ),
-              ListTile(
-                leading: CircleAvatar(child: Text('SM')),
-                title: Text('Sarah Mensah'),
-                subtitle: Text('Dispenser'),
-              ),
-              ListTile(
-                leading: CircleAvatar(child: Text('KO')),
-                title: Text('Kenneth Osei'),
-                subtitle: Text('Dispenser (Temporary)'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close',
-                  style: TextStyle(color: AppColors.accent)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showSupplierDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Supplier Preferences'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Primary Supplier:',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text(_supplierCtrl.text, style: AppTextStyles.subheading),
-              const SizedBox(height: 16),
-              const Text('Available Distributors:',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              const Text(
-                  '• Standard Wholesales Ltd\n• Kinapharma Distributor Accra\n• Tobinco Pharmaceuticals'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close',
-                  style: TextStyle(color: AppColors.accent)),
             ),
           ],
         );
@@ -279,7 +241,8 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
                       Row(
                         children: [
                           CircleAvatar(
-                            backgroundColor: AppColors.accent.withOpacity(0.1),
+                            backgroundColor:
+                                AppColors.accent.withValues(alpha: 0.1),
                             radius: 28,
                             child: const Icon(Icons.storefront,
                                 color: AppColors.accent, size: 28),
@@ -353,21 +316,25 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
                 _buildNavigationTile(
                   icon: Icons.people_outline,
                   title: 'Staff Accounts',
-                  trailingText: '3 Active',
-                  onTap: _showStaffDialog,
+                  onTap: () => context.push('/pharmacy/staff'),
                 ),
                 const SizedBox(height: 12),
                 _buildNavigationTile(
                   icon: Icons.local_shipping_outlined,
                   title: 'Supplier Preferences',
-                  onTap: _showSupplierDialog,
+                  onTap: () => context.push('/pharmacy/suppliers'),
                 ),
                 const SizedBox(height: 12),
                 _buildNavigationTile(
                   icon: Icons.help_outline,
                   title: 'Support & Helpdesk',
-                  onTap: () {},
+                  onTap: () => context.push('/pharmacy/support'),
                 ),
+                const SizedBox(height: 12),
+                _buildNavigationTile(
+                    icon: Icons.delete_forever_outlined,
+                    title: 'Delete pharmacy account',
+                    onTap: _deleteAccount),
                 const SizedBox(height: 32),
 
                 // Logout Button
@@ -454,7 +421,7 @@ class _PharmacyMoreScreenState extends State<PharmacyMoreScreen> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: AppColors.accent,
+            activeThumbColor: AppColors.accent,
           ),
         ],
       ),

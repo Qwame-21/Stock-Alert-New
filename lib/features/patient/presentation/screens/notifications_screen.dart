@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/skeleton_loading.dart';
 import '../../data/notifications_repository.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -69,7 +70,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(itemCount: 6, showHeader: false)
           : _error != null
               ? Center(
                   child: FilledButton.icon(

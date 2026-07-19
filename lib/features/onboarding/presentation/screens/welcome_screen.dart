@@ -15,7 +15,7 @@ class WelcomeScreen extends StatelessWidget {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxHeight < 700;
-          final panelHeight = constraints.maxHeight * (compact ? 0.43 : 0.40);
+          final panelHeight = constraints.maxHeight * (compact ? 0.54 : 0.48);
 
           return Stack(
             fit: StackFit.expand,
@@ -88,7 +88,7 @@ class WelcomeScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Care, connected.',
+                          'Care and pharmacy, connected.',
                           style: AppTextStyles.heading.copyWith(
                             fontSize: compact ? 24 : 27,
                             fontWeight: FontWeight.w700,
@@ -97,8 +97,10 @@ class WelcomeScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'Find trusted pharmacies, check medicine availability, '
-                          'and manage your care in one secure place.',
+                          'Help patients find trusted pharmacies and available '
+                          'medicines, while community pharmacies track inventory, '
+                          'monitor expiry dates, scan barcodes, and manage supplier '
+                          'orders in one secure place.',
                           style: AppTextStyles.body.copyWith(
                             color: AppColors.textSecondary,
                             fontSize: compact ? 13 : 14,
@@ -159,4 +161,3 @@ class WelcomeScreen extends StatelessWidget {
     );
   }
 }
-

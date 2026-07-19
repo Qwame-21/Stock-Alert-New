@@ -12,6 +12,7 @@ import type {
 const bookingRecordSchema = z.object({
   id: z.uuid(),
   patient_profile_id: z.uuid(),
+  provider_profile_id: z.uuid().nullable(),
   pharmacy_id: z.uuid().nullable(),
   provider_name: z.string(),
   specialty: z.string().nullable(),
@@ -27,6 +28,11 @@ const bookingRecordSchema = z.object({
   video_link: z.string().nullable(),
   notes: z.string().nullable(),
   cancellation_reason: z.string().nullable(),
+  requested_at: z.string(),
+  reviewed_at: z.string().nullable(),
+  responded_at: z.string().nullable(),
+  responded_by: z.string().uuid().nullable(),
+  decision_note: z.string().nullable(),
   version: z.coerce.number().int(),
 });
 
@@ -36,6 +42,13 @@ function bookingFailure(error: { code?: string; message: string }): never {
     databaseCode: error.code,
     databaseMessage: error.message,
   });
+  if (message.includes("patient account required")) {
+    throw new HttpError(
+      409,
+      "PATIENT_PROFILE_REQUIRED",
+      "Complete the patient profile before booking a consultation.",
+    );
+  }
   if (error.code === "42501") {
     throw new HttpError(
       403,
@@ -72,13 +85,6 @@ function bookingFailure(error: { code?: string; message: string }): never {
       400,
       "BOOKING_DURATION_INVALID",
       "The appointment duration is invalid.",
-    );
-  }
-  if (message.includes("patient account required")) {
-    throw new HttpError(
-      409,
-      "PATIENT_PROFILE_REQUIRED",
-      "Complete the patient profile before booking a consultation.",
     );
   }
   if (
@@ -130,7 +136,7 @@ export async function listBookings(
   let query = getSupabaseAdmin()
     .from("appointments")
     .select(
-      "id, patient_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, version",
+      "id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, version",
       { count: "exact" },
     )
     .or(participantFilter)
@@ -160,7 +166,7 @@ export async function getBooking(actorId: string, bookingId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("appointments")
     .select(
-      "id, patient_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, version",
+      "id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, version",
     )
     .eq("id", bookingId)
     .is("deleted_at", null)
@@ -174,7 +180,10 @@ export async function getBooking(actorId: string, bookingId: string) {
   }
 
   const appointment = bookingRecordSchema.parse(data);
-  if (appointment.patient_profile_id !== actorId) {
+  if (
+    appointment.patient_profile_id !== actorId &&
+    appointment.provider_profile_id !== actorId
+  ) {
     const memberships = await pharmacyMemberships(actorId);
     if (
       !appointment.pharmacy_id ||
@@ -248,7 +257,7 @@ export async function createBooking(
   const { data, error } = await getSupabaseAdmin().rpc("create_appointment", {
     actor_id: actorId,
     mutation_id: input.mutationId,
-    target_pharmacy_id: input.pharmacyId,
+    target_pharmacy_id: input.pharmacyId ?? null,
     provider_name: provider.display_name,
     provider_specialty: provider.specialty,
     appointment_time: input.scheduledAt,
@@ -273,6 +282,37 @@ export async function updateBooking(
   bookingId: string,
   input: UpdateBookingInput,
 ) {
+  const current = await getBooking(actorId, bookingId);
+  const isProvider = current.provider_profile_id === actorId;
+
+  if (isProvider) {
+    if (!input.status || !["confirmed", "cancelled", "completed", "no_show"].includes(input.status)) {
+      throw new HttpError(403, "FORBIDDEN", "Providers may only respond to or complete appointment requests.");
+    }
+    const allowed: Record<string, string[]> = {
+      pending: ["confirmed", "cancelled"],
+      confirmed: ["completed", "cancelled", "no_show"],
+    };
+    if (!(allowed[current.status] ?? []).includes(input.status)) {
+      throw new HttpError(409, "INVALID_BOOKING_STATE", "That appointment decision is not available.");
+    }
+    const { data, error } = await getSupabaseAdmin()
+      .from("appointments")
+      .update({
+        status: input.status,
+        video_link: input.videoLink,
+        decision_note: input.decisionNote,
+        responded_by: actorId,
+      })
+      .eq("id", bookingId)
+      .eq("version", input.expectedVersion)
+      .select("id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, version")
+      .maybeSingle();
+    if (error) bookingFailure(error);
+    if (!data) throw new HttpError(409, "VERSION_CONFLICT", "The appointment changed on another device.");
+    return bookingRecordSchema.parse(data);
+  }
+
   const { data, error } = await getSupabaseAdmin().rpc("update_appointment", {
     actor_id: actorId,
     appointment_id: bookingId,

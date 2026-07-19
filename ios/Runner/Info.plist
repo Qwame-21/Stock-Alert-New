@@ -43,6 +43,8 @@
 		<true/>
 		<key>NSFaceIDUsageDescription</key>
 		<string>Use Face ID for secure biometric login.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Scan medicine barcodes when receiving pharmacy stock.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Your location helps find nearby pharmacies.</string>
 		<key>NSPhotoLibraryUsageDescription</key>

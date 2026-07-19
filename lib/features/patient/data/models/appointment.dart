@@ -10,6 +10,10 @@ class Appointment {
   final int version;
   final String status;
   final String? providerId;
+  final DateTime? requestedAt;
+  final DateTime? reviewedAt;
+  final DateTime? respondedAt;
+  final String? decisionNote;
 
   const Appointment({
     required this.id,
@@ -23,6 +27,10 @@ class Appointment {
     this.version = 1,
     this.status = 'pending',
     this.providerId,
+    this.requestedAt,
+    this.reviewedAt,
+    this.respondedAt,
+    this.decisionNote,
   });
 
   Map<String, dynamic> toJson() {
@@ -38,6 +46,10 @@ class Appointment {
       'version': version,
       'status': status,
       'providerId': providerId,
+      'requestedAt': requestedAt?.toIso8601String(),
+      'reviewedAt': reviewedAt?.toIso8601String(),
+      'respondedAt': respondedAt?.toIso8601String(),
+      'decisionNote': decisionNote,
     };
   }
 
@@ -54,6 +66,10 @@ class Appointment {
       version: json['version'] as int? ?? 1,
       status: json['status'] as String? ?? 'pending',
       providerId: json['providerId'] as String?,
+      requestedAt: DateTime.tryParse(json['requestedAt'] as String? ?? ''),
+      reviewedAt: DateTime.tryParse(json['reviewedAt'] as String? ?? ''),
+      respondedAt: DateTime.tryParse(json['respondedAt'] as String? ?? ''),
+      decisionNote: json['decisionNote'] as String?,
     );
   }
 
@@ -75,6 +91,14 @@ class Appointment {
       notes: json['notes'] as String?,
       version: json['version'] as int? ?? 1,
       status: json['status'] as String? ?? 'pending',
+      providerId: json['provider_profile_id'] as String?,
+      requestedAt:
+          DateTime.tryParse(json['requested_at'] as String? ?? '')?.toLocal(),
+      reviewedAt:
+          DateTime.tryParse(json['reviewed_at'] as String? ?? '')?.toLocal(),
+      respondedAt:
+          DateTime.tryParse(json['responded_at'] as String? ?? '')?.toLocal(),
+      decisionNote: json['decision_note'] as String?,
     );
   }
 }

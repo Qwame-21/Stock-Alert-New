@@ -78,6 +78,19 @@ class BookingsCubit extends Cubit<BookingsState> {
     emit(state.copyWith(appointments: current));
   }
 
+  Future<void> decideBooking(String id, String status, {String? note}) async {
+    final current = List<Appointment>.from(state.appointments);
+    final index = current.indexWhere((item) => item.id == id);
+    if (index < 0) return;
+    final updated = await _repository.decide(
+      current[index],
+      status: status,
+      note: note,
+    );
+    current[index] = updated;
+    emit(state.copyWith(appointments: current, clearError: true));
+  }
+
   Future<void> refresh() async {
     _isLoaded = false;
     await loadBookings();

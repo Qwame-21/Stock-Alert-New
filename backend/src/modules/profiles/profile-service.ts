@@ -43,6 +43,15 @@ export async function getProfileByUserId(userId: string): Promise<Profile | null
       );
     }
     pharmacyId = pharmacy?.id ?? null;
+    if (pharmacyId == null) {
+      const { data: membership, error: membershipError } = await getSupabaseAdmin()
+        .from("pharmacy_staff")
+        .select("pharmacy_id")
+        .eq("profile_id", userId)
+        .maybeSingle();
+      if (membershipError) throw new HttpError(502, "PROFILE_LOOKUP_FAILED", "The staff pharmacy context could not be loaded.");
+      pharmacyId = membership?.pharmacy_id ?? null;
+    }
   }
 
   return profileSchema.parse({ ...data, pharmacy_id: pharmacyId });

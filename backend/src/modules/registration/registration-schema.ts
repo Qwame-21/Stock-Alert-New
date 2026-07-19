@@ -52,6 +52,9 @@ const providerRegistrationSchema = accountSchema.extend({
   consultationMode: z.enum(["video", "in_person", "both"]).default("video"),
   location: z.string().trim().max(300).optional(),
   consultationDuration: z.number().int().min(10).max(180).default(30),
+  profileImageBase64: z.string().min(1).max(4_000_000),
+  profileImageExtension: z.enum(["jpg", "jpeg", "png", "webp"]),
+  providerPolicyAccepted: z.literal(true),
 });
 
 export const registrationSchema = z.discriminatedUnion("role", [

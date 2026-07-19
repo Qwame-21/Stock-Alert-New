@@ -10,14 +10,16 @@ class RegistrationStepTwoScreen extends StatefulWidget {
   const RegistrationStepTwoScreen({super.key});
 
   @override
-  State<RegistrationStepTwoScreen> createState() => _RegistrationStepTwoScreenState();
+  State<RegistrationStepTwoScreen> createState() =>
+      _RegistrationStepTwoScreenState();
 }
 
 class _RegistrationStepTwoScreenState extends State<RegistrationStepTwoScreen> {
   final ImagePicker _picker = ImagePicker();
   bool _isValidating = false;
 
-  Future<void> _pickAndValidateDocument(BuildContext context, ImageSource source, String docType) async {
+  Future<void> _pickAndValidateDocument(
+      ImageSource source, String docType) async {
     try {
       final XFile? image = await _picker.pickImage(
         source: source,
@@ -39,7 +41,8 @@ class _RegistrationStepTwoScreenState extends State<RegistrationStepTwoScreen> {
                 SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
                 ),
                 SizedBox(width: 12),
                 Text('Analyzing document security features...'),
@@ -50,14 +53,16 @@ class _RegistrationStepTwoScreenState extends State<RegistrationStepTwoScreen> {
         );
       }
 
-      await Future.delayed(const Duration(seconds: 2)); // Simulate smart processing
+      await Future.delayed(
+          const Duration(seconds: 2)); // Simulate smart processing
 
       // Smart functional checks: check file type, file size
       final file = File(image.path);
       final sizeInBytes = await file.length();
 
       if (sizeInBytes < 5000) {
-        throw Exception('The uploaded file is too small to be a valid document. Please retake the photo.');
+        throw Exception(
+            'The uploaded file is too small to be a valid document. Please retake the photo.');
       }
 
       if (mounted) {
@@ -99,180 +104,246 @@ class _RegistrationStepTwoScreenState extends State<RegistrationStepTwoScreen> {
           appBar: AppBar(
             backgroundColor: AppColors.background,
             elevation: 0,
-            leading: const BackButton(color: AppColors.textPrimary),
+            leading: IconButton(
+              tooltip: 'Back to account details',
+              icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+              onPressed: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/register/1');
+                }
+              },
+            ),
             title: Text('2 of 4', style: AppTextStyles.label),
             centerTitle: false,
           ),
-          body: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isPatient ? 'Verify your identity' : 'Verify Pharmacy License',
-                  style: AppTextStyles.heading,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  isPatient
-                      ? "This helps pharmacies confirm who they're dispensing to."
-                      : "Upload registration documents to verify your business.",
-                  style: AppTextStyles.body,
-                ),
-                const SizedBox(height: 24),
-                if (isPatient) ...[
-                  Row(
-                    children: [
-                      Text('Document Type', style: AppTextStyles.label),
-                      const SizedBox(width: 4),
-                      Text('(Required)', style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  _DocumentTypeTile(
-                    label: 'National ID',
-                    selected: state.docType == 'National ID',
-                    onTap: () => context.read<RegistrationCubit>().setDocType('National ID'),
-                  ),
-                  const SizedBox(height: 10),
-                  _DocumentTypeTile(
-                    label: 'Passport',
-                    selected: state.docType == 'Passport',
-                    onTap: () => context.read<RegistrationCubit>().setDocType('Passport'),
-                  ),
-                  const SizedBox(height: 10),
-                  _DocumentTypeTile(
-                    label: "Driver's License",
-                    selected: state.docType == "Driver's License",
-                    onTap: () => context.read<RegistrationCubit>().setDocType("Driver's License"),
-                  ),
-                ] else ...[
-                  Row(
-                    children: [
-                      Text('Registration Certificate', style: AppTextStyles.label),
-                      const SizedBox(width: 4),
-                      Text('(Required)', style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  _DocumentTypeTile(
-                    label: 'Pharmacy License / Certificate',
-                    selected: true,
-                    onTap: () {},
-                  ),
-                ],
-                const SizedBox(height: 24),
-                Row(
+          body: SafeArea(
+            child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Upload Document', style: AppTextStyles.label),
-                    const SizedBox(width: 4),
-                    Text('(Required)', style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (hasDoc)
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: AppColors.accent),
-                      borderRadius: BorderRadius.circular(12),
-                      color: AppColors.accent.withOpacity(0.05),
+                    Text(
+                      isPatient
+                          ? 'Verify your identity'
+                          : 'Verify Pharmacy License',
+                      style: AppTextStyles.heading,
                     ),
-                    child: Row(
+                    const SizedBox(height: 6),
+                    Text(
+                      isPatient
+                          ? "This helps pharmacies confirm who they're dispensing to."
+                          : "Upload registration documents to verify your business.",
+                      style: AppTextStyles.body,
+                    ),
+                    const SizedBox(height: 24),
+                    if (isPatient) ...[
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text('Document Type', style: AppTextStyles.label),
+                          const SizedBox(width: 4),
+                          Text('(Required)',
+                              style: AppTextStyles.body.copyWith(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _DocumentTypeTile(
+                        label: 'National ID',
+                        selected: state.docType == 'National ID',
+                        onTap: () => context
+                            .read<RegistrationCubit>()
+                            .setDocType('National ID'),
+                      ),
+                      const SizedBox(height: 10),
+                      _DocumentTypeTile(
+                        label: 'Passport',
+                        selected: state.docType == 'Passport',
+                        onTap: () => context
+                            .read<RegistrationCubit>()
+                            .setDocType('Passport'),
+                      ),
+                      const SizedBox(height: 10),
+                      _DocumentTypeTile(
+                        label: "Driver's License",
+                        selected: state.docType == "Driver's License",
+                        onTap: () => context
+                            .read<RegistrationCubit>()
+                            .setDocType("Driver's License"),
+                      ),
+                    ] else ...[
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text('Registration Certificate',
+                              style: AppTextStyles.label),
+                          const SizedBox(width: 4),
+                          Text('(Required)',
+                              style: AppTextStyles.body.copyWith(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _DocumentTypeTile(
+                        label: 'Pharmacy License / Certificate',
+                        selected: true,
+                        onTap: () {},
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        const Icon(Icons.description_outlined, color: AppColors.accent),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            state.attachedFilePath!.split('/').last,
-                            style: AppTextStyles.subheading.copyWith(color: AppColors.accent),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: AppColors.statusBad),
-                          onPressed: () => context.read<RegistrationCubit>().clearDocument(),
-                        ),
+                        Text('Upload Document', style: AppTextStyles.label),
+                        const SizedBox(width: 4),
+                        Text('(Required)',
+                            style: AppTextStyles.body.copyWith(
+                                fontSize: 12, color: AppColors.textSecondary)),
                       ],
                     ),
-                  )
-                else
-                  Row(
-                    children: [
-                      Expanded(
-                        child: InkWell(
-                          onTap: _isValidating
-                              ? null
-                              : () => _pickAndValidateDocument(context, ImageSource.gallery, state.role == 'patient' ? state.docType : 'Pharmacy License'),
+                    const SizedBox(height: 8),
+                    if (hasDoc)
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppColors.accent),
                           borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            height: 100,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: AppColors.hairline),
-                              borderRadius: BorderRadius.circular(12),
+                          color: AppColors.accent.withValues(alpha: 0.05),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.description_outlined,
+                                color: AppColors.accent),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                state.attachedFilePath!.split('/').last,
+                                style: AppTextStyles.subheading
+                                    .copyWith(color: AppColors.accent),
+                              ),
                             ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.photo_library_outlined, color: AppColors.textSecondary),
-                                const SizedBox(height: 8),
-                                Text('Pick from Gallery', style: AppTextStyles.label),
-                              ],
+                            IconButton(
+                              icon: const Icon(Icons.close,
+                                  color: AppColors.statusBad),
+                              onPressed: () => context
+                                  .read<RegistrationCubit>()
+                                  .clearDocument(),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: _isValidating
+                                  ? null
+                                  : () => _pickAndValidateDocument(
+                                      ImageSource.gallery,
+                                      state.role == 'patient'
+                                          ? state.docType
+                                          : 'Pharmacy License'),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                constraints:
+                                    const BoxConstraints(minHeight: 100),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 14),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: AppColors.hairline),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.photo_library_outlined,
+                                        color: AppColors.textSecondary),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Pick from Gallery',
+                                      style: AppTextStyles.label,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: InkWell(
-                          onTap: _isValidating
-                              ? null
-                              : () => _pickAndValidateDocument(context, ImageSource.camera, state.role == 'patient' ? state.docType : 'Pharmacy License'),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            height: 100,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: AppColors.hairline),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: InkWell(
+                              onTap: _isValidating
+                                  ? null
+                                  : () => _pickAndValidateDocument(
+                                      ImageSource.camera,
+                                      state.role == 'patient'
+                                          ? state.docType
+                                          : 'Pharmacy License'),
                               borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.camera_alt_outlined, color: AppColors.textSecondary),
-                                const SizedBox(height: 8),
-                                Text('Scan document', style: AppTextStyles.label),
-                              ],
+                              child: Container(
+                                constraints:
+                                    const BoxConstraints(minHeight: 100),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 14),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: AppColors.hairline),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.camera_alt_outlined,
+                                        color: AppColors.textSecondary),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Scan document',
+                                      style: AppTextStyles.label,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                const Spacer(),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: hasDoc
-                        ? () async {
-                            final cubit = context.read<RegistrationCubit>();
-                            // Save step 2 state to cache
-                            await cubit.saveProgress(2);
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: hasDoc
+                            ? () async {
+                                final cubit = context.read<RegistrationCubit>();
+                                // Save step 2 state to cache
+                                await cubit.saveProgress(2);
 
-                            if (context.mounted) {
-                              if (isPatient) {
-                                context.push('/register/3');
-                              } else {
-                                // Pharmacy skips step 3, goes straight to step 4
-                                context.push('/register/4');
+                                if (context.mounted) {
+                                  if (isPatient) {
+                                    context.push('/register/3');
+                                  } else {
+                                    // Pharmacy skips step 3, goes straight to step 4
+                                    context.push('/register/4');
+                                  }
+                                }
                               }
-                            }
-                          }
-                        : null,
-                    child: const Text('Continue'),
-                  ),
-                ),
-                const SizedBox(height: 32),
-              ],
-            ),
+                            : null,
+                        child: const Text('Continue'),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                  ],
+                )),
           ),
         );
       },
@@ -308,11 +379,20 @@ class _DocumentTypeTile extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: AppTextStyles.subheading),
+            Expanded(
+              child: Text(
+                label,
+                style: AppTextStyles.subheading,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 12),
             if (selected)
               const Icon(Icons.radio_button_checked, color: AppColors.accent)
             else
-              const Icon(Icons.radio_button_off, color: AppColors.textSecondary),
+              const Icon(Icons.radio_button_off,
+                  color: AppColors.textSecondary),
           ],
         ),
       ),

@@ -1,9 +1,15 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/skeleton_loading.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/storage/local_db_service.dart';
 import '../../../onboarding/presentation/controllers/registration_cubit.dart';
 import '../../data/provider_repository.dart';
 
@@ -26,6 +32,7 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
   bool _accepting = true;
   bool _loading = true;
   Map<String, dynamic>? _profile;
+  String? _avatarPath;
 
   @override
   void initState() {
@@ -36,9 +43,11 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
   Future<void> _load() async {
     try {
       final profile = await _repository.getMe();
+      final avatar = await LocalDbService().read('provider_avatar_path');
       if (!mounted) return;
       setState(() {
         _profile = profile;
+        _avatarPath = avatar;
         _accepting = profile['is_accepting_bookings'] as bool? ?? true;
         _duration = (profile['consultation_duration'] as num?)?.toInt() ?? 30;
         _days.updateAll((_, __) => false);
@@ -54,6 +63,33 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(error.toString())));
       }
+    }
+  }
+
+  Future<void> _updatePhoto() async {
+    final image = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 1200,
+    );
+    if (image == null) return;
+    var extension = image.path.split('.').last.toLowerCase();
+    if (!{'jpg', 'jpeg', 'png', 'webp'}.contains(extension)) extension = 'jpg';
+    setState(() => _loading = true);
+    try {
+      await ApiClient.instance.post('/api/v1/profile/avatar', body: {
+        'contentBase64': base64Encode(await image.readAsBytes()),
+        'extension': extension,
+      });
+      await LocalDbService().write('provider_avatar_path', image.path);
+      if (mounted) setState(() => _avatarPath = image.path);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -108,7 +144,7 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
               }
               if (context.mounted) {
                 context.read<RegistrationCubit>().reset();
-                context.go('/login');
+                context.go('/login?switching=true');
               }
             },
             icon: const Icon(Icons.logout),
@@ -116,19 +152,57 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
         ],
       ),
       body: _loading && _profile == null
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonDashboard()
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                Text(_profile?['display_name'] as String? ?? 'Provider',
-                    style: AppTextStyles.heading),
-                Text(_profile?['specialty'] as String? ?? '',
-                    style: AppTextStyles.body),
+                Row(children: [
+                  InkWell(
+                    onTap: _loading ? null : _updatePhoto,
+                    borderRadius: BorderRadius.circular(40),
+                    child: CircleAvatar(
+                      radius: 34,
+                      backgroundColor: AppColors.accent.withValues(alpha: .1),
+                      backgroundImage: _avatarPath == null
+                          ? null
+                          : FileImage(File(_avatarPath!)),
+                      child: _avatarPath == null
+                          ? const Icon(Icons.add_a_photo_outlined,
+                              color: AppColors.accent)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        Text(_profile?['display_name'] as String? ?? 'Provider',
+                            style: AppTextStyles.heading),
+                        Text(_profile?['specialty'] as String? ?? '',
+                            style: AppTextStyles.body),
+                        TextButton.icon(
+                            onPressed: _loading ? null : _updatePhoto,
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            label: const Text('Update professional photo')),
+                      ])),
+                ]),
                 const SizedBox(height: 8),
                 Chip(
                   label: Text(
                     'Verification: ${_profile?['verification_status'] ?? 'pending'}',
                   ),
+                ),
+                const ExpansionTile(
+                  title: Text('Provider Code of Conduct'),
+                  subtitle: Text('Required standards for every consultation'),
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Text(
+                          'Protect patient privacy, communicate respectfully, work only within verified qualifications, keep appointment information accurate, avoid discrimination, and follow clinical emergency-escalation procedures.'),
+                    )
+                  ],
                 ),
                 const SizedBox(height: 24),
                 SwitchListTile(
@@ -181,7 +255,7 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                   ],
                 ),
                 DropdownButtonFormField<int>(
-                  value: _duration,
+                  initialValue: _duration,
                   decoration:
                       const InputDecoration(labelText: 'Appointment duration'),
                   items: const [15, 20, 30, 45, 60]

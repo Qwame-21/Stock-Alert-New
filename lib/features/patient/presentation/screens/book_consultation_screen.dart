@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/skeleton_loading.dart';
 import '../../../provider/data/provider_repository.dart';
 import '../../data/models/appointment.dart';
 import '../controllers/bookings_cubit.dart';
@@ -21,6 +22,7 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
   ConsultationProvider? _provider;
   DateTime? _slot;
   bool _loading = true;
+  bool _booking = false;
   String? _error;
 
   @override
@@ -90,6 +92,7 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
       notes:
           '${provider.consultationMode == 'video' ? 'Video' : 'Consultation'} appointment.',
     );
+    setState(() => _booking = true);
     try {
       await context.read<BookingsCubit>().addBooking(appointment);
       if (mounted) context.go('/patient/bookings');
@@ -98,7 +101,14 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(error.toString())));
       }
+    } finally {
+      if (mounted) setState(() => _booking = false);
     }
+  }
+
+  String _dayLabel(DateTime value) {
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return names[value.weekday - 1];
   }
 
   @override
@@ -110,14 +120,50 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Text('Choose a date', style: AppTextStyles.subheading),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.calendar_today),
-              title: Text('${_date.day}/${_date.month}/${_date.year}'),
-              trailing: const Text('Change'),
-              onTap: _pickDate,
+            Row(children: [
+              Expanded(
+                  child: Text('Choose a day', style: AppTextStyles.subheading)),
+              TextButton.icon(
+                  onPressed: _pickDate,
+                  icon: const Icon(Icons.calendar_month_outlined),
+                  label: const Text('Full calendar')),
+            ]),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 76,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: 14,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final day = DateUtils.dateOnly(
+                      DateTime.now().add(Duration(days: index + 1)));
+                  final selected = DateUtils.isSameDay(day, _date);
+                  return ChoiceChip(
+                    selected: selected,
+                    onSelected: (_) async {
+                      setState(() => _date = day);
+                      await _load();
+                    },
+                    label: SizedBox(
+                        width: 42,
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                          Text(_dayLabel(day)),
+                          Text('${day.day}',
+                              style: AppTextStyles.subheading.copyWith(
+                                  color: selected
+                                      ? Colors.white
+                                      : AppColors.textPrimary))
+                        ])),
+                  );
+                },
+              ),
             ),
+            const SizedBox(height: 8),
+            Text(
+                'Selected: ${_dayLabel(_date)}, ${_date.day}/${_date.month}/${_date.year}',
+                style: AppTextStyles.body.copyWith(color: AppColors.accent)),
             const Divider(),
             Text('Available verified providers',
                 style: AppTextStyles.subheading),
@@ -127,7 +173,7 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
             ),
             const SizedBox(height: 12),
             if (_loading)
-              const Center(child: CircularProgressIndicator())
+              const SkeletonList(itemCount: 5, showHeader: false)
             else if (_error != null)
               FilledButton.icon(
                 onPressed: _load,
@@ -137,25 +183,31 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
             else if (_providers.isEmpty)
               const _EmptyProviders()
             else
-              for (final provider in _providers)
-                if (provider.slots.isNotEmpty)
-                  Card(
-                    child: RadioListTile<ConsultationProvider>(
-                      value: provider,
-                      groupValue: _provider,
-                      onChanged: (value) => setState(() {
-                        _provider = value;
-                        _slot = null;
-                      }),
-                      title: Text(provider.name),
-                      subtitle: Text(
-                        '${provider.specialty} · ${provider.yearsExperience} years\n'
-                        '${provider.consultationMode.replaceAll('_', ' ')} · '
-                        '${provider.durationMinutes} minutes',
-                      ),
-                      isThreeLine: true,
-                    ),
-                  ),
+              RadioGroup<ConsultationProvider>(
+                groupValue: _provider,
+                onChanged: (value) => setState(() {
+                  _provider = value;
+                  _slot = null;
+                }),
+                child: Column(
+                  children: [
+                    for (final provider in _providers)
+                      if (provider.slots.isNotEmpty)
+                        Card(
+                          child: RadioListTile<ConsultationProvider>(
+                            value: provider,
+                            title: Text(provider.name),
+                            subtitle: Text(
+                              '${provider.specialty} · ${provider.yearsExperience} years\n'
+                              '${provider.consultationMode.replaceAll('_', ' ')} · '
+                              '${provider.durationMinutes} minutes',
+                            ),
+                            isThreeLine: true,
+                          ),
+                        ),
+                  ],
+                ),
+              ),
             if (_provider != null) ...[
               const SizedBox(height: 20),
               Text('Available times', style: AppTextStyles.subheading),
@@ -174,8 +226,12 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
               ),
               const SizedBox(height: 24),
               FilledButton(
-                onPressed: _slot == null ? null : _book,
-                child: const Text('Confirm booking'),
+                onPressed: _slot == null || _booking ? null : _book,
+                child: Text(_booking
+                    ? 'Confirming…'
+                    : _slot == null
+                        ? 'Select a time'
+                        : 'Confirm ${_dayLabel(_slot!)} ${_slot!.day}/${_slot!.month} at ${_time(_slot!)}'),
               ),
             ],
           ],

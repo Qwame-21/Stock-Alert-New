@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/liquid_glass_card.dart';
+import '../../../../core/widgets/skeleton_loading.dart';
 import '../../data/models/identity_tag_model.dart';
 import '../controllers/identity_tag_cubit.dart';
 
@@ -28,7 +29,7 @@ class IdentityTagScreen extends StatelessWidget {
       body: BlocBuilder<IdentityTagCubit, IdentityTagState>(
         builder: (context, state) {
           if (state is IdentityTagLoading) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonList(itemCount: 3);
           }
           if (state is IdentityTagError) {
             return Center(
@@ -96,7 +97,7 @@ class _IdentityCardView extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: _statusColor.withOpacity(0.12),
+                        color: _statusColor.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(

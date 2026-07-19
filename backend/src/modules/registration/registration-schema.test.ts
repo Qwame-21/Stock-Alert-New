@@ -45,6 +45,9 @@ describe("registrationSchema", () => {
         yearsExperience: 8,
         consultationMode: "both",
         consultationDuration: 30,
+        profileImageBase64: "aGVhbHRoY2FyZS1waG90bw==",
+        profileImageExtension: "jpg",
+        providerPolicyAccepted: true,
       }),
     ).not.toThrow();
   });

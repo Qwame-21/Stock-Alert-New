@@ -35,4 +35,13 @@ class MapsConfig {
 
   /// True when a non-empty key is available for the current platform.
   static bool get hasKey => apiKey.isNotEmpty;
+
+  static const String androidPackageName = String.fromEnvironment(
+    'ANDROID_PACKAGE_NAME',
+    defaultValue: 'com.example.stock_a_app',
+  );
+  static const String androidCertificateSha1 = String.fromEnvironment(
+    'ANDROID_CERT_SHA1',
+    defaultValue: 'E048C45F329978E1F12DCE3BAD964300553D377B',
+  );
 }

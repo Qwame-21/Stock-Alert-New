@@ -9,6 +9,8 @@ const backendEnvSchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((value) => value === "true"),
+  PAYSTACK_SECRET_KEY: z.string().startsWith("sk_").optional(),
+  APP_PUBLIC_URL: z.url().optional(),
 });
 
 export type BackendEnv = z.infer<typeof backendEnvSchema>;

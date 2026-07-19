@@ -1,192 +1,352 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/skeleton_loading.dart';
+import '../../data/models/reward_summary.dart';
+import '../../data/rewards_repository.dart';
 
-class RewardActivity {
-  final String title;
-  final String date;
-  final int points;
-  final bool isEarned;
-
-  const RewardActivity(this.title, this.date, this.points, this.isEarned);
-}
-
-class RewardsScreen extends StatelessWidget {
+class RewardsScreen extends StatefulWidget {
   const RewardsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    const activities = [
-      RewardActivity('Returned Amoxicillin (Expired)', '12 July 2026', 150, true),
-      RewardActivity('Refilled Vitamin C Prescription', '10 July 2026', 50, true),
-      RewardActivity('Redeemed Doctor Consultation', '05 July 2026', 200, false),
-      RewardActivity('Returned Paracetamol', '01 July 2026', 80, true),
-    ];
+  State<RewardsScreen> createState() => _RewardsScreenState();
+}
 
+class _RewardsScreenState extends State<RewardsScreen> {
+  final _repository = RewardsRepository();
+  late Future<RewardSummary> _rewards = _repository.load();
+
+  Future<void> _refresh() async {
+    final next = _repository.load();
+    setState(() => _rewards = next);
+    await next;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFFAFBFB),
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: const Color(0xFFFAFBFB),
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         leading: const BackButton(color: AppColors.textPrimary),
-        title: Text('Rewards & Points', style: AppTextStyles.subheading),
+        title: Text('Rewards', style: AppTextStyles.subheading),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+      body: FutureBuilder<RewardSummary>(
+        future: _rewards,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const SkeletonList(itemCount: 4);
+          }
+          if (snapshot.hasError) {
+            return _RewardsError(onRetry: _refresh);
+          }
+          return _RewardsContent(
+            summary: snapshot.data ??
+                const RewardSummary(balance: 0, pending: [], activity: []),
+            onRefresh: _refresh,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _RewardsContent extends StatelessWidget {
+  const _RewardsContent({required this.summary, required this.onRefresh});
+
+  final RewardSummary summary;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        children: [
+          _BalanceCard(balance: summary.balance),
+          if (summary.pending.isNotEmpty) ...[
+            const SizedBox(height: 28),
+            const _SectionHeading(
+              title: 'In review',
+              subtitle: 'Points appear in your balance after verification.',
+            ),
+            const SizedBox(height: 12),
+            ...summary.pending.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _RewardActivityTile(item: item, pending: true),
+              ),
+            ),
+          ],
+          const SizedBox(height: 28),
+          const _SectionHeading(
+            title: 'Points activity',
+            subtitle: 'A secure history of earned and redeemed points.',
+          ),
+          const SizedBox(height: 12),
+          if (summary.activity.isEmpty)
+            const _EmptyRewards()
+          else
+            ...summary.activity.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _RewardActivityTile(item: item),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BalanceCard extends StatelessWidget {
+  const _BalanceCard({required this.balance});
+
+  final int balance;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '$balance available reward points',
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.accent,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x251B5349),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Points card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.accent, Color(0xFF438A7E)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            const Row(
+              children: [
+                Icon(Icons.stars_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Available points',
+                  style: TextStyle(
+                    color: Color(0xFFDCEBE8),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    'Available Points Balance',
-                    style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    '480 pts',
-                    style: AppTextStyles.heading.copyWith(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Equivalent to GHS 48.00 in value',
-                    style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12),
-                  ),
-                ],
-              ),
+              ],
             ),
-            SizedBox(height: 24),
-
-            // Return Status Tracker
-            Text('Medicine Returns Tracker', style: AppTextStyles.subheading),
-            SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.hairline),
-                borderRadius: BorderRadius.circular(16),
+            const SizedBox(height: 18),
+            Text(
+              '$balance pts',
+              style: AppTextStyles.heading.copyWith(
                 color: Colors.white,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Return Ref: RET-902-A', style: AppTextStyles.subheading),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.statusWarning.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          'Under Review',
-                          style: AppTextStyles.label.copyWith(color: AppColors.statusWarning),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 4),
-                  Text('Item: Ibuprofen 400mg (10 caps)', style: AppTextStyles.body),
-                  SizedBox(height: 20),
-                  // Progress step indicator
-                  Row(
-                    children: [
-                      _buildStep(label: 'Submitted', active: true, completed: true),
-                      _buildLine(completed: true),
-                      _buildStep(label: 'Reviewing', active: true, completed: false),
-                      _buildLine(completed: false),
-                      _buildStep(label: 'Resolved', active: false, completed: false),
-                    ],
-                  ),
-                ],
+                fontSize: 34,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            SizedBox(height: 24),
-
-            // Activity History
-            Text('Points Activity', style: AppTextStyles.subheading),
-            SizedBox(height: 12),
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: activities.length,
-              separatorBuilder: (_, __) => SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final act = activities[index];
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppColors.hairline),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(act.title, style: AppTextStyles.subheading),
-                            Text(act.date, style: AppTextStyles.body),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        '${act.isEarned ? "+" : "-"}${act.points} pts',
-                        style: AppTextStyles.subheading.copyWith(
-                          color: act.isEarned ? AppColors.statusGood : AppColors.statusBad,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+            const SizedBox(height: 6),
+            const Text(
+              'Points are updated from verified StockAlert activity.',
+              style: TextStyle(
+                color: Color(0xFFDCEBE8),
+                fontSize: 12,
+                height: 1.4,
+              ),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildStep({required String label, required bool active, required bool completed}) {
-    Color color = AppColors.hairline;
-    IconData icon = Icons.circle_outlined;
-    if (completed) {
-      color = AppColors.statusGood;
-      icon = Icons.check_circle;
-    } else if (active) {
-      color = AppColors.accent;
-      icon = Icons.play_circle_outline;
-    }
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({required this.title, required this.subtitle});
 
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: color, size: 20),
-        SizedBox(height: 4),
-        Text(label, style: AppTextStyles.label.copyWith(color: color, fontSize: 10)),
+        Text(title,
+            style:
+                AppTextStyles.subheading.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 3),
+        Text(subtitle, style: AppTextStyles.body.copyWith(fontSize: 12)),
       ],
     );
   }
+}
 
-  Widget _buildLine({required bool completed}) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: completed ? AppColors.statusGood : AppColors.hairline,
+class _RewardActivityTile extends StatelessWidget {
+  const _RewardActivityTile({required this.item, this.pending = false});
+
+  final RewardTransaction item;
+  final bool pending;
+
+  @override
+  Widget build(BuildContext context) {
+    final positive = item.points > 0;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AppColors.hairline),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color:
+                  pending ? const Color(0xFFFFF7E6) : const Color(0xFFE8F3F0),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(
+              pending
+                  ? Icons.hourglass_top_rounded
+                  : positive
+                      ? Icons.add_circle_outline_rounded
+                      : Icons.redeem_outlined,
+              color: pending ? AppColors.statusWarning : AppColors.accent,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.subheading.copyWith(fontSize: 14),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  pending
+                      ? 'Verification in progress'
+                      : _formatDate(item.occurredAt),
+                  style: AppTextStyles.body.copyWith(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${positive ? '+' : ''}${item.points} pts',
+            style: AppTextStyles.label.copyWith(
+              color: pending
+                  ? AppColors.statusWarning
+                  : positive
+                      ? AppColors.statusGood
+                      : AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+}
+
+class _EmptyRewards extends StatelessWidget {
+  const _EmptyRewards();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AppColors.hairline),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE8F3F0),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.stars_outlined, color: AppColors.accent),
+          ),
+          const SizedBox(height: 14),
+          Text('No rewards activity yet', style: AppTextStyles.subheading),
+          const SizedBox(height: 5),
+          Text(
+            'Verified reward activity will appear here automatically.',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.body,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RewardsError extends StatelessWidget {
+  const _RewardsError({required this.onRetry});
+
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_outlined,
+                color: AppColors.textSecondary, size: 38),
+            const SizedBox(height: 14),
+            Text('Rewards are unavailable', style: AppTextStyles.subheading),
+            const SizedBox(height: 6),
+            Text(
+              'Check your connection and try again.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.body,
+            ),
+            const SizedBox(height: 18),
+            FilledButton(onPressed: onRetry, child: const Text('Try again')),
+          ],
+        ),
       ),
     );
   }

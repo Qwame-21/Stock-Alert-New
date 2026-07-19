@@ -21,8 +21,16 @@ import '../../features/patient/presentation/screens/bookings_screen.dart';
 import '../../features/patient/presentation/screens/book_consultation_screen.dart';
 import '../../features/patient/presentation/screens/rewards_screen.dart';
 import '../../features/patient/presentation/screens/patient_profile_screen.dart';
+import '../../features/patient/presentation/screens/payment_result_screen.dart';
+import '../../features/patient/presentation/screens/payment_options_screen.dart';
+import '../../features/patient/presentation/screens/transaction_history_screen.dart';
+import '../../features/patient/presentation/screens/safety_contacts_screen.dart';
 import '../../features/patient/presentation/screens/notifications_screen.dart';
 import '../../features/patient/presentation/screens/change_password_screen.dart';
+import '../../features/patient/presentation/screens/saved_places_screen.dart';
+import '../../features/patient/presentation/screens/identity_privacy_screen.dart';
+import '../../features/patient/presentation/screens/help_support_screen.dart';
+import '../../features/patient/presentation/screens/sign_in_security_screen.dart';
 
 import '../../features/locator/presentation/screens/locator_screen.dart';
 
@@ -33,8 +41,11 @@ import '../../features/pharmacy/presentation/screens/orders_screen.dart';
 import '../../features/pharmacy/presentation/screens/reports_screen.dart';
 import '../../features/pharmacy/presentation/screens/pharmacy_more_screen.dart';
 import '../../features/pharmacy/presentation/screens/inventory_detail_screen.dart';
+import '../../features/pharmacy/presentation/screens/pharmacy_support_screen.dart';
+import '../../features/pharmacy/presentation/screens/staff_accounts_screen.dart';
 import '../../features/provider/presentation/screens/provider_registration_screen.dart';
 import '../../features/provider/presentation/screens/provider_dashboard_screen.dart';
+import '../../features/identity_tag/presentation/screens/scan_identity_screen.dart';
 
 import '../storage/local_db_service.dart';
 import '../../features/onboarding/data/profile_repository.dart';
@@ -83,7 +94,12 @@ final GoRouter appRouter = GoRouter(
       // 2. Authenticated — fetch role for routing
       if (welcoming || loggingIn || registering) {
         final profile = await ProfileRepository().getMe();
-        final role = profile['role'] as String? ?? 'patient';
+        final role = profile['role'] as String?;
+        if (role == null ||
+            !{'patient', 'pharmacy', 'provider'}.contains(role)) {
+          await supabase.auth.signOut();
+          return '/login?incomplete=true';
+        }
         if (role == 'pharmacy') return '/pharmacy/dashboard';
         if (role == 'provider') return '/provider/dashboard';
         return '/patient/home';
@@ -112,20 +128,31 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/choose-role',
-      builder: (context, state) => const ChooseRoleScreen(),
+      builder: (context, state) => ChooseRoleScreen(
+        loginMode: state.uri.queryParameters['mode'] == 'login',
+      ),
     ),
     GoRoute(
       path: '/login',
       builder: (context, state) {
         // Support ?expired=true query param (session timeout)
         final expired = state.uri.queryParameters['expired'] == 'true';
+        final switching = state.uri.queryParameters['switching'] == 'true';
         // Support extra map with expiredMessage (e.g. post-registration email confirmation)
         final extraMsg = (state.extra is Map)
             ? (state.extra as Map)['expiredMessage'] as String?
             : null;
         return LoginScreen(
+          selectedRole: state.uri.queryParameters['role'],
           expiredMessage: extraMsg ??
-              (expired ? 'Your session expired, please log in again.' : null),
+              (state.uri.queryParameters['incomplete'] == 'true'
+                  ? 'Your sign-in exists, but account setup was incomplete. Select your account type and submit the registration again with the same email and password to repair it.'
+                  : null) ??
+              (switching
+                  ? 'Signed out. Log in with the account whose workspace you want to use.'
+                  : expired
+                      ? 'Your session expired, please log in again.'
+                      : null),
         );
       },
     ),
@@ -197,6 +224,38 @@ final GoRouter appRouter = GoRouter(
       path: '/patient/profile',
       builder: (context, state) => const PatientProfileScreen(),
     ),
+    GoRoute(
+      path: '/patient/payment-result',
+      builder: (context, state) => PaymentResultScreen(
+        reference: state.uri.queryParameters['reference'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/patient/payments',
+      builder: (context, state) => PaymentOptionsScreen(
+        phoneNumber: state.extra is String ? state.extra as String : '',
+      ),
+    ),
+    GoRoute(
+      path: '/patient/transactions',
+      builder: (context, state) => const TransactionHistoryScreen(),
+    ),
+    GoRoute(
+      path: '/patient/safety',
+      builder: (context, state) => const SafetyContactsScreen(),
+    ),
+    GoRoute(
+        path: '/patient/saved-places',
+        builder: (context, state) => const SavedPlacesScreen()),
+    GoRoute(
+        path: '/patient/identity-privacy',
+        builder: (context, state) => const IdentityPrivacyScreen()),
+    GoRoute(
+        path: '/patient/support',
+        builder: (context, state) => const HelpSupportScreen()),
+    GoRoute(
+        path: '/patient/security',
+        builder: (context, state) => const SignInSecurityScreen()),
 
     // Patient Sub-features
     GoRoute(
@@ -221,17 +280,14 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/provider/bookings',
-      builder: (context, state) => const BookingsScreen(),
+      builder: (context, state) =>
+          const BookingsScreen(isProviderWorkspace: true),
     ),
 
     // Pharmacy Tab Routes
     GoRoute(
       path: '/pharmacy/dashboard',
-      builder: (context, state) => const PharmacyDashboardScreen(
-        inventoryCount: 432,
-        expiringSoonCount: 12,
-        pendingOrdersCount: 5,
-      ),
+      builder: (context, state) => const PharmacyDashboardScreen(),
     ),
     GoRoute(
       path: '/pharmacy/inventory',
@@ -242,13 +298,27 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) => const ScanMedicineScreen(),
     ),
     GoRoute(
+      path: '/identity/scan',
+      builder: (context, state) => const ScanIdentityScreen(),
+    ),
+    GoRoute(
       path: '/pharmacy/orders',
       builder: (context, state) => const OrdersScreen(),
+    ),
+    GoRoute(
+      path: '/pharmacy/suppliers',
+      builder: (context, state) => const OrdersScreen(initialTab: 1),
     ),
     GoRoute(
       path: '/pharmacy/more',
       builder: (context, state) => const PharmacyMoreScreen(),
     ),
+    GoRoute(
+        path: '/pharmacy/support',
+        builder: (context, state) => const PharmacySupportScreen()),
+    GoRoute(
+        path: '/pharmacy/staff',
+        builder: (context, state) => const StaffAccountsScreen()),
 
     // Pharmacy Sub-features
     GoRoute(

@@ -38,6 +38,7 @@ export const updateBookingSchema = z
     notes: z.string().trim().max(2000).nullable().optional(),
     videoLink: z.url().max(1000).nullable().optional(),
     status: bookingStatusSchema.optional(),
+    decisionNote: z.string().trim().max(500).nullable().optional(),
   })
   .refine(
     (value) =>

@@ -2,11 +2,11 @@
 /// of these. Screens can read this to show something like "syncing..." or
 /// a small warning dot, instead of pretending sync always just works.
 enum SyncStatus {
-  pending,   // written locally, waiting to be sent
+  pending, // written locally, waiting to be sent
   uploading, // actively being sent right now
-  synced,    // confirmed saved on the backend
-  conflict,  // backend version and local version disagree, needs resolving
-  failed,    // upload attempted and failed, will retry
+  synced, // confirmed saved on the backend
+  conflict, // backend version and local version disagree, needs resolving
+  failed, // upload attempted and failed, will retry
 }
 
 extension SyncStatusStorage on SyncStatus {

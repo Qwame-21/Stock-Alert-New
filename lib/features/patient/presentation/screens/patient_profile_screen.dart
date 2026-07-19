@@ -14,6 +14,8 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/storage/local_db_service.dart';
 import '../../../onboarding/data/profile_repository.dart';
 import '../../../onboarding/presentation/controllers/registration_cubit.dart';
+import '../../../identity_tag/data/identity_card_repository.dart';
+import '../../data/payments_repository.dart';
 
 class PatientProfileScreen extends StatefulWidget {
   const PatientProfileScreen({super.key});
@@ -29,6 +31,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
   String _language = 'English';
   String? _avatarPath;
   bool _isSaving = false;
+  bool _isStartingPayment = false;
 
   final _fullNameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -214,18 +217,20 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
     final selected = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: ['English', 'Twi', 'French']
-              .map(
-                (language) => RadioListTile<String>(
-                  value: language,
-                  groupValue: _language,
-                  title: Text(language),
-                  onChanged: (value) => Navigator.pop(context, value),
-                ),
-              )
-              .toList(),
+        child: RadioGroup<String>(
+          groupValue: _language,
+          onChanged: (value) => Navigator.pop(context, value),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: ['English', 'Twi', 'French']
+                .map(
+                  (language) => RadioListTile<String>(
+                    value: language,
+                    title: Text(language),
+                  ),
+                )
+                .toList(),
+          ),
         ),
       ),
     );
@@ -250,6 +255,399 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Email support@stockalert.app')),
         );
+      }
+    }
+  }
+
+  Future<String?> _askForValue(String title, String initialValue) async {
+    final controller = TextEditingController(text: initialValue);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(labelText: title),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  // ignore: unused_element
+  Future<void> _openSafety(RegistrationState state) async {
+    var name = await LocalDbService().read('trusted_contact_name') ??
+        state.emergencyContactName;
+    var phone = await LocalDbService().read('trusted_contact_phone') ??
+        state.emergencyContactPhone;
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Safety & trusted contacts', style: AppTextStyles.heading),
+                const SizedBox(height: 8),
+                Text(
+                  'Your registration emergency contact is used first. You can update the trusted contact here.',
+                  style: AppTextStyles.body,
+                ),
+                const SizedBox(height: 18),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                      child: Icon(Icons.health_and_safety_outlined)),
+                  title: Text(name.isEmpty ? 'No trusted contact' : name),
+                  subtitle: Text(phone.isEmpty ? 'Add a phone number' : phone),
+                  trailing: const Icon(Icons.edit_outlined),
+                  onTap: () async {
+                    final newName =
+                        await _askForValue('Trusted contact name', name);
+                    if (newName == null || !mounted) return;
+                    final newPhone =
+                        await _askForValue('Trusted contact phone', phone);
+                    if (newPhone == null) return;
+                    await LocalDbService()
+                        .write('trusted_contact_name', newName);
+                    await LocalDbService()
+                        .write('trusted_contact_phone', newPhone);
+                    setSheetState(() {
+                      name = newName;
+                      phone = newPhone;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: phone.isEmpty
+                        ? null
+                        : () => launchUrl(Uri(scheme: 'tel', path: phone)),
+                    icon: const Icon(Icons.call_outlined),
+                    label: const Text('Call trusted contact'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Future<void> _openSavedPlaces() async {
+    var home = await LocalDbService().read('saved_place_home') ?? '';
+    var work = await LocalDbService().read('saved_place_work') ?? '';
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text('Saved places', style: AppTextStyles.heading),
+            Text('Save addresses for faster pharmacy searches and directions.',
+                style: AppTextStyles.body),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.home_outlined),
+              title: const Text('Home'),
+              subtitle: Text(home.isEmpty ? 'Add home address' : home),
+              onTap: () async {
+                final value = await _askForValue('Home address', home);
+                if (value != null) {
+                  await LocalDbService().write('saved_place_home', value);
+                }
+                if (context.mounted) Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.work_outline),
+              title: const Text('Work'),
+              subtitle: Text(work.isEmpty ? 'Add work address' : work),
+              onTap: () async {
+                final value = await _askForValue('Work address', work);
+                if (value != null) {
+                  await LocalDbService().write('saved_place_work', value);
+                }
+                if (context.mounted) Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Future<void> _openPayments() async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Payments', style: AppTextStyles.heading),
+              Text('Paystack will use ${_phoneCtrl.text} for mobile payments.',
+                  style: AppTextStyles.body),
+              const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.phone_android_outlined),
+                title: const Text('Mobile money'),
+                subtitle: Text(_phoneCtrl.text),
+              ),
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.credit_card_outlined),
+                title: Text('Add card securely'),
+                subtitle: Text(
+                    'Card details are entered only in Paystack checkout and are never stored by StockAlert.'),
+              ),
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Text(
+                      'Checkout becomes available when the server-side Paystack key and verification webhook are configured.'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _isStartingPayment
+                      ? null
+                      : () async {
+                          setState(() => _isStartingPayment = true);
+                          try {
+                            final payments = PaymentsRepository();
+                            final checkout = await payments.startCheckout(
+                              amountMinor: 100,
+                            );
+                            await payments
+                                .openCheckout(checkout.authorizationUrl);
+                          } catch (error) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(this.context).showSnackBar(
+                                SnackBar(content: Text(error.toString())),
+                              );
+                            }
+                          } finally {
+                            if (mounted) {
+                              setState(() => _isStartingPayment = false);
+                            }
+                          }
+                        },
+                  icon: _isStartingPayment
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.lock_outline),
+                  label: Text(_isStartingPayment
+                      ? 'Opening secure checkout…'
+                      : 'Make GHS 1.00 test payment'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Future<void> _openTransactions() async {
+    final raw = await LocalDbService().read('transaction_history');
+    final transactions =
+        raw == null ? <dynamic>[] : (jsonDecode(raw) as List<dynamic>);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Transaction history', style: AppTextStyles.heading),
+              const SizedBox(height: 16),
+              if (transactions.isEmpty)
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.receipt_long_outlined),
+                  title: Text('No transactions yet'),
+                  subtitle: Text(
+                      'Completed pharmacy and consultation payments will appear here.'),
+                )
+              else
+                ...transactions.map((item) => ListTile(title: Text('$item'))),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Future<void> _openDetailedSupport() async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Help & Support', style: AppTextStyles.heading),
+              Text(
+                  'Get help with accounts, medicine searches, bookings, payments, privacy, or pharmacy orders.',
+                  style: AppTextStyles.body),
+              const SizedBox(height: 12),
+              const ListTile(
+                  leading: Icon(Icons.schedule),
+                  title: Text('Support hours'),
+                  subtitle: Text('Monday–Saturday, 8:00 AM–6:00 PM')),
+              const ListTile(
+                  leading: Icon(Icons.shield_outlined),
+                  title: Text('Emergency notice'),
+                  subtitle: Text(
+                      'StockAlert is not an emergency service. Contact local emergency services for urgent help.')),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _openSupport,
+                  icon: const Icon(Icons.email_outlined),
+                  label: const Text('Email support'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Future<void> _openIdentityPrivacy() async {
+    final repository = IdentityCardRepository();
+    try {
+      var settings = await repository.getMine();
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setSheetState) {
+            Future<void> update({
+              bool? sharing,
+              bool? name,
+              bool? dob,
+              bool? emergency,
+              bool rotate = false,
+            }) async {
+              settings = await repository.updatePrivacy(
+                sharingEnabled: sharing,
+                shareFullName: name,
+                shareDateOfBirth: dob,
+                shareEmergencyContact: emergency,
+                rotateToken: rotate,
+              );
+              setSheetState(() {});
+            }
+
+            return SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.all(20),
+                children: [
+                  Text('Digital identity privacy',
+                      style: AppTextStyles.heading),
+                  Text(
+                    'The QR contains only a random, replaceable token. Personal details stay on the server and are revealed only to an authenticated pharmacy or consultation provider according to these choices.',
+                    style: AppTextStyles.body,
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Allow identity verification'),
+                    subtitle: const Text(
+                        'Turning this off makes the QR private immediately.'),
+                    value: settings.sharingEnabled,
+                    onChanged: (value) => update(sharing: value),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Share full name'),
+                    value: settings.shareFullName,
+                    onChanged: settings.sharingEnabled
+                        ? (value) => update(name: value)
+                        : null,
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Share date of birth'),
+                    value: settings.shareDateOfBirth,
+                    onChanged: settings.sharingEnabled
+                        ? (value) => update(dob: value)
+                        : null,
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Share emergency contact'),
+                    subtitle: const Text('Off by default'),
+                    value: settings.shareEmergencyContact,
+                    onChanged: settings.sharingEnabled
+                        ? (value) => update(emergency: value)
+                        : null,
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => update(rotate: true),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Replace QR security token'),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
@@ -283,7 +681,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                 }
                 if (!mounted) return;
                 registrationCubit.reset();
-                this.context.go('/login');
+                this.context.go('/login?switching=true');
               },
               child: const Text('Log Out',
                   style: TextStyle(
@@ -437,6 +835,48 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                   title: 'Change Password',
                   onTap: () => context.push('/patient/change-password'),
                 ),
+                const SizedBox(height: 12),
+                _buildNavigationTile(
+                  icon: Icons.security_outlined,
+                  title: 'Sign in & Security',
+                  onTap: () => context.push('/patient/security'),
+                ),
+                const SizedBox(height: 24),
+
+                Text('Safety, places & payments', style: AppTextStyles.label),
+                const SizedBox(height: 8),
+                _buildNavigationTile(
+                  icon: Icons.health_and_safety_outlined,
+                  title: 'Safety & trusted contacts',
+                  onTap: () => context.push('/patient/safety'),
+                ),
+                const SizedBox(height: 12),
+                _buildNavigationTile(
+                  icon: Icons.qr_code_2_outlined,
+                  title: 'Digital identity privacy',
+                  onTap: () => context.push('/patient/identity-privacy'),
+                ),
+                const SizedBox(height: 12),
+                _buildNavigationTile(
+                  icon: Icons.place_outlined,
+                  title: 'Saved places',
+                  onTap: () => context.push('/patient/saved-places'),
+                ),
+                const SizedBox(height: 12),
+                _buildNavigationTile(
+                  icon: Icons.account_balance_wallet_outlined,
+                  title: 'Payment options',
+                  onTap: () => context.push(
+                    '/patient/payments',
+                    extra: _phoneCtrl.text,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildNavigationTile(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'Transaction history',
+                  onTap: () => context.push('/patient/transactions'),
+                ),
                 const SizedBox(height: 24),
 
                 Text('Preferences', style: AppTextStyles.label),
@@ -471,7 +911,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                 _buildNavigationTile(
                   icon: Icons.help_outline,
                   title: 'Help & Support',
-                  onTap: _openSupport,
+                  onTap: () => context.push('/patient/support'),
                 ),
                 const SizedBox(height: 32),
 
@@ -559,7 +999,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: AppColors.accent,
+            activeThumbColor: AppColors.accent,
           ),
         ],
       ),

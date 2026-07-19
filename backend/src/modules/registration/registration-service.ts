@@ -1,4 +1,4 @@
-import type { Session } from "@supabase/supabase-js";
+import type { Session, User } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/db/supabase-admin";
 import { getSupabaseAuthClient } from "@/lib/db/supabase-auth";
@@ -92,6 +92,150 @@ function sessionPayload(session: Session | null) {
   };
 }
 
+async function findAuthUserByEmail(email: string): Promise<User | null> {
+  const admin = getSupabaseAdmin();
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
+    if (error) {
+      throw new HttpError(
+        502,
+        "ACCOUNT_RECOVERY_FAILED",
+        "The existing account could not be checked. Please try again.",
+      );
+    }
+    const match = data.users.find(
+      (candidate) => candidate.email?.toLowerCase() === email.toLowerCase(),
+    );
+    if (match) return match;
+    if (data.users.length < 1000) break;
+  }
+  return null;
+}
+
+async function createRoleProfile(input: RegistrationInput, userId: string) {
+  const admin = getSupabaseAdmin();
+  let profileError;
+  if (input.role === "provider") {
+    const { error: providerProfileError } = await admin.from("profiles").upsert({
+      id: userId,
+      role: "provider",
+      email: input.email,
+      full_name: input.fullName,
+      phone_number: input.phoneNumber,
+      location: input.location,
+    });
+    profileError = providerProfileError;
+    if (!profileError) {
+      const { error } = await admin.from("consultation_providers").upsert({
+        profile_id: userId,
+        display_name: input.fullName,
+        specialty: input.specialty,
+        professional_license: input.professionalLicense,
+        registration_authority: input.registrationAuthority,
+        years_experience: input.yearsExperience,
+        bio: input.bio,
+        consultation_mode: input.consultationMode,
+        location: input.location,
+        consultation_duration: input.consultationDuration,
+        verification_status: getBackendEnv().TESTING_MODE
+          ? "verified"
+          : "pending",
+      });
+      profileError = error;
+    }
+    if (!profileError) {
+      const storage = admin.storage;
+      const path = `${userId}/profile.${input.profileImageExtension}`;
+      const { error } = await storage.from("avatars").upload(
+        path,
+        Buffer.from(input.profileImageBase64, "base64"),
+        {
+          upsert: true,
+          contentType: `image/${input.profileImageExtension === "jpg" ? "jpeg" : input.profileImageExtension}`,
+        },
+      );
+      profileError = error;
+    }
+  } else {
+    const result = await admin.rpc("create_account_profile", {
+      user_id: userId,
+      profile_data: profilePayload(input, userId),
+      details_data: detailsPayload(input),
+    });
+    profileError = result.error;
+  }
+  return profileError;
+}
+
+async function recoverExistingAccount(
+  input: RegistrationInput,
+): Promise<RegistrationResult> {
+  const auth = getSupabaseAuthClient();
+  const signIn = await auth.auth.signInWithPassword({
+    email: input.email,
+    password: input.password,
+  });
+  const emailUnconfirmed = signIn.error?.message
+    .toLowerCase()
+    .includes("email not confirmed");
+  if (signIn.error && !emailUnconfirmed) {
+    throw new HttpError(
+      409,
+      "EMAIL_ALREADY_REGISTERED",
+      "An account with this email already exists. Use its password to continue or reset the password.",
+    );
+  }
+
+  const existingUser = signIn.data.user ?? (await findAuthUserByEmail(input.email));
+  if (!existingUser) {
+    throw new HttpError(
+      409,
+      "EMAIL_ALREADY_REGISTERED",
+      "An account with this email already exists. Please sign in instead.",
+    );
+  }
+
+  const admin = getSupabaseAdmin();
+  const { data: existingProfile, error: profileLookupError } = await admin
+    .from("profiles")
+    .select("role")
+    .eq("id", existingUser.id)
+    .maybeSingle();
+  if (profileLookupError) {
+    throw new HttpError(502, "ACCOUNT_RECOVERY_FAILED", "The account profile could not be checked.");
+  }
+  if (existingProfile && existingProfile.role !== input.role) {
+    throw new HttpError(
+      409,
+      "ACCOUNT_ROLE_MISMATCH",
+      `This email belongs to a ${existingProfile.role} account. Choose that account type when signing in.`,
+    );
+  }
+  if (!existingProfile) {
+    const profileError = await createRoleProfile(input, existingUser.id);
+    if (profileError) {
+      console.error("Registration recovery profile creation failed", {
+        userId: existingUser.id,
+        error: profileError.message,
+      });
+      throw new HttpError(
+        502,
+        "PROFILE_CREATION_FAILED",
+        "Your sign-in was found, but the account profile could not be repaired. Please try again.",
+      );
+    }
+  }
+
+  return {
+    user: { id: existingUser.id, email: existingUser.email ?? input.email },
+    confirmationRequired: signIn.data.session === null,
+    session: sessionPayload(signIn.data.session),
+  };
+}
+
 export async function registerAccount(
   input: RegistrationInput,
 ): Promise<RegistrationResult> {
@@ -117,6 +261,12 @@ export async function registerAccount(
             full_name: input.fullName,
             phone_number: input.phoneNumber,
             specialty: input.specialty,
+            professional_license: input.professionalLicense,
+            registration_authority: input.registrationAuthority,
+            years_experience: input.yearsExperience,
+            consultation_mode: input.consultationMode,
+            consultation_duration: input.consultationDuration,
+            location: input.location,
           };
 
   const {
@@ -130,6 +280,7 @@ export async function registerAccount(
 
   if (signUpError || !user) {
     const duplicate = signUpError?.message.toLowerCase().includes("registered");
+    if (duplicate) return recoverExistingAccount(input);
     throw new HttpError(
       duplicate ? 409 : 400,
       duplicate ? "EMAIL_ALREADY_REGISTERED" : "REGISTRATION_FAILED",
@@ -140,51 +291,10 @@ export async function registerAccount(
   }
 
   if (user.identities?.length === 0) {
-    throw new HttpError(
-      409,
-      "EMAIL_ALREADY_REGISTERED",
-      "An account with this email already exists.",
-    );
+    return recoverExistingAccount(input);
   }
 
-  const admin = getSupabaseAdmin();
-  let profileError;
-  if (input.role === "provider") {
-    const { error: providerProfileError } = await admin.from("profiles").insert({
-      id: user.id,
-      role: "provider",
-      email: input.email,
-      full_name: input.fullName,
-      phone_number: input.phoneNumber,
-      location: input.location,
-    });
-    profileError = providerProfileError;
-    if (!profileError) {
-      const { error } = await admin.from("consultation_providers").insert({
-        profile_id: user.id,
-        display_name: input.fullName,
-        specialty: input.specialty,
-        professional_license: input.professionalLicense,
-        registration_authority: input.registrationAuthority,
-        years_experience: input.yearsExperience,
-        bio: input.bio,
-        consultation_mode: input.consultationMode,
-        location: input.location,
-        consultation_duration: input.consultationDuration,
-        verification_status: getBackendEnv().TESTING_MODE
-          ? "verified"
-          : "pending",
-      });
-      profileError = error;
-    }
-  } else {
-    const result = await admin.rpc("create_account_profile", {
-      user_id: user.id,
-      profile_data: profilePayload(input, user.id),
-      details_data: detailsPayload(input),
-    });
-    profileError = result.error;
-  }
+  const profileError = await createRoleProfile(input, user.id);
 
   if (profileError) {
     const { error: cleanupError } = await getSupabaseAdmin().auth.admin.deleteUser(

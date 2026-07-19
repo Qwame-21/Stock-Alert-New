@@ -7,6 +7,16 @@ class InventoryMedicine {
   final StockLevel level;
   final int quantity;
   final int version;
+  final String barcode;
+  final String batchNumber;
+  final String genericName;
+  final String brandName;
+  final String strength;
+  final String dosageForm;
+  final String manufacturer;
+  final int reorderLevel;
+  final double? unitPrice;
+  final String currency;
 
   const InventoryMedicine({
     required this.id,
@@ -15,7 +25,33 @@ class InventoryMedicine {
     required this.level,
     this.quantity = 0,
     this.version = 1,
+    this.barcode = '',
+    this.batchNumber = '',
+    this.genericName = '',
+    this.brandName = '',
+    this.strength = '',
+    this.dosageForm = '',
+    this.manufacturer = '',
+    this.reorderLevel = 0,
+    this.unitPrice,
+    this.currency = 'GHS',
   });
+
+  DateTime? get expiryDate => DateTime.tryParse(expiry);
+
+  int? get daysUntilExpiry {
+    final date = expiryDate;
+    if (date == null) return null;
+    final today = DateTime.now();
+    final start = DateTime(today.year, today.month, today.day);
+    return date.difference(start).inDays;
+  }
+
+  bool get isExpired => daysUntilExpiry != null && daysUntilExpiry! < 0;
+  bool get isExpiringSoon =>
+      daysUntilExpiry != null &&
+      daysUntilExpiry! >= 0 &&
+      daysUntilExpiry! <= 90;
 
   Map<String, dynamic> toJson() {
     return {
@@ -25,6 +61,16 @@ class InventoryMedicine {
       'level': level.name,
       'quantity': quantity,
       'version': version,
+      'barcode': barcode,
+      'batchNumber': batchNumber,
+      'genericName': genericName,
+      'brandName': brandName,
+      'strength': strength,
+      'dosageForm': dosageForm,
+      'manufacturer': manufacturer,
+      'reorderLevel': reorderLevel,
+      'unitPrice': unitPrice,
+      'currency': currency,
     };
   }
 
@@ -39,6 +85,16 @@ class InventoryMedicine {
       ),
       quantity: json['quantity'] as int? ?? 0,
       version: json['version'] as int? ?? 1,
+      barcode: json['barcode'] as String? ?? '',
+      batchNumber: json['batchNumber'] as String? ?? '',
+      genericName: json['genericName'] as String? ?? '',
+      brandName: json['brandName'] as String? ?? '',
+      strength: json['strength'] as String? ?? '',
+      dosageForm: json['dosageForm'] as String? ?? '',
+      manufacturer: json['manufacturer'] as String? ?? '',
+      reorderLevel: json['reorderLevel'] as int? ?? 0,
+      unitPrice: (json['unitPrice'] as num?)?.toDouble(),
+      currency: json['currency'] as String? ?? 'GHS',
     );
   }
 
@@ -53,6 +109,16 @@ class InventoryMedicine {
       expiry: json['expiry_date'] as String? ?? '',
       quantity: quantity,
       version: json['version'] as int? ?? 1,
+      barcode: medicine['barcode'] as String? ?? '',
+      batchNumber: json['batch_number'] as String? ?? '',
+      genericName: medicine['generic_name'] as String? ?? '',
+      brandName: medicine['brand_name'] as String? ?? '',
+      strength: medicine['strength'] as String? ?? '',
+      dosageForm: medicine['dosage_form'] as String? ?? '',
+      manufacturer: medicine['manufacturer'] as String? ?? '',
+      reorderLevel: reorderLevel,
+      unitPrice: (json['unit_price'] as num?)?.toDouble(),
+      currency: json['currency'] as String? ?? 'GHS',
       level: quantity <= 0
           ? StockLevel.outOfStock
           : quantity <= reorderLevel

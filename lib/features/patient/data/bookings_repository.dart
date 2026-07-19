@@ -86,6 +86,45 @@ class BookingsRepository {
     await _db.deleteBooking(appointment.id);
   }
 
+  Future<Appointment> decide(
+    Appointment appointment, {
+    required String status,
+    String? note,
+  }) async {
+    if (!ApiConfig.remoteBookingsEnabled) {
+      final updated = Appointment(
+        id: appointment.id,
+        doctorName: appointment.doctorName,
+        specialty: appointment.specialty,
+        date: appointment.date,
+        time: appointment.time,
+        avatarUrl: appointment.avatarUrl,
+        videoLink: appointment.videoLink,
+        notes: appointment.notes,
+        version: appointment.version + 1,
+        status: status,
+        providerId: appointment.providerId,
+        requestedAt: appointment.requestedAt,
+        reviewedAt: DateTime.now(),
+        respondedAt: DateTime.now(),
+        decisionNote: note,
+      );
+      await _db.insertBooking(updated.toJson());
+      return updated;
+    }
+    final response =
+        await _api.patch('/api/v1/bookings/${appointment.id}', body: {
+      'mutationId': const Uuid().v4(),
+      'expectedVersion': appointment.version,
+      'status': status,
+      if (note != null && note.trim().isNotEmpty) 'decisionNote': note.trim(),
+    });
+    final updated =
+        Appointment.fromApi(Map<String, dynamic>.from(response.data as Map));
+    await _db.insertBooking(updated.toJson());
+    return updated;
+  }
+
   DateTime _scheduledAt(Appointment appointment) {
     final dateParts = appointment.date.split('/');
     final timeParts = appointment.time.split(RegExp(r'[: ]'));

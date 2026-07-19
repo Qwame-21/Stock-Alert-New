@@ -8,10 +8,12 @@ class RegistrationStepThreeScreen extends StatefulWidget {
   const RegistrationStepThreeScreen({super.key});
 
   @override
-  State<RegistrationStepThreeScreen> createState() => _RegistrationStepThreeScreenState();
+  State<RegistrationStepThreeScreen> createState() =>
+      _RegistrationStepThreeScreenState();
 }
 
-class _RegistrationStepThreeScreenState extends State<RegistrationStepThreeScreen> {
+class _RegistrationStepThreeScreenState
+    extends State<RegistrationStepThreeScreen> {
   final _allergyController = TextEditingController();
   final _conditionController = TextEditingController();
   final _medicationController = TextEditingController();
@@ -61,7 +63,8 @@ class _RegistrationStepThreeScreenState extends State<RegistrationStepThreeScree
       final phone = _emergencyPhoneController.text.trim();
       final email = _emergencyEmailController.text.trim();
 
-      _emergencyNameError = name.isEmpty ? 'Emergency contact name is required' : null;
+      _emergencyNameError =
+          name.isEmpty ? 'Emergency contact name is required' : null;
       if (phone.isEmpty) {
         _emergencyPhoneError = 'Emergency contact phone is required';
       } else if (phone.length < 8) {
@@ -70,7 +73,8 @@ class _RegistrationStepThreeScreenState extends State<RegistrationStepThreeScree
         _emergencyPhoneError = null;
       }
 
-      if (email.isNotEmpty && !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+      if (email.isNotEmpty &&
+          !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
         _emergencyEmailError = 'Enter a valid email address';
       } else {
         _emergencyEmailError = null;
@@ -110,14 +114,14 @@ class _RegistrationStepThreeScreenState extends State<RegistrationStepThreeScree
 
   void _saveState() {
     context.read<RegistrationCubit>().updateHealthProfile(
-      bloodGroup: _bloodGroup,
-      knownAllergies: _allergies,
-      chronicConditions: _conditions,
-      currentMedication: _medicationController.text,
-      emergencyContactName: _emergencyNameController.text,
-      emergencyContactPhone: _emergencyPhoneController.text,
-      emergencyContactEmail: _emergencyEmailController.text,
-    );
+          bloodGroup: _bloodGroup,
+          knownAllergies: _allergies,
+          chronicConditions: _conditions,
+          currentMedication: _medicationController.text,
+          emergencyContactName: _emergencyNameController.text,
+          emergencyContactPhone: _emergencyPhoneController.text,
+          emergencyContactEmail: _emergencyEmailController.text,
+        );
   }
 
   bool _isFormValid() {
@@ -138,7 +142,17 @@ class _RegistrationStepThreeScreenState extends State<RegistrationStepThreeScree
       appBar: AppBar(
         backgroundColor: AppColors.background,
         elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
+        leading: IconButton(
+          tooltip: 'Back to document verification',
+          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/register/2');
+            }
+          },
+        ),
         title: Text('3 of 4', style: AppTextStyles.label),
         centerTitle: false,
       ),
@@ -154,7 +168,7 @@ class _RegistrationStepThreeScreenState extends State<RegistrationStepThreeScree
               style: AppTextStyles.body,
             ),
             const SizedBox(height: 24),
-            
+
             // Blood Group Dropdown
             const _FieldLabel('Blood Group', isRequired: false),
             Container(
@@ -185,8 +199,9 @@ class _RegistrationStepThreeScreenState extends State<RegistrationStepThreeScree
             const SizedBox(height: 16),
 
             // Known Allergies (Required Chip Input)
-            const _FieldLabel('Known Allergies (Food, Drug, or Environmental)', isRequired: true),
-            
+            const _FieldLabel('Known Allergies (Food, Drug, or Environmental)',
+                isRequired: true),
+
             // Professional selection suggestions
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -197,7 +212,9 @@ class _RegistrationStepThreeScreenState extends State<RegistrationStepThreeScree
                   ActionChip(
                     label: const Text('No Allergies'),
                     onPressed: () => _addAllergy('No Allergies'),
-                    backgroundColor: _allergies.contains('No Allergies') ? AppColors.accent.withOpacity(0.2) : null,
+                    backgroundColor: _allergies.contains('No Allergies')
+                        ? AppColors.accent.withValues(alpha: 0.2)
+                        : null,
                   ),
                   ActionChip(
                     label: const Text('Peanuts'),
@@ -415,12 +432,14 @@ class _FieldLabel extends StatelessWidget {
             if (isRequired)
               TextSpan(
                 text: ' (Required)',
-                style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary),
+                style: AppTextStyles.body
+                    .copyWith(fontSize: 12, color: AppColors.textSecondary),
               )
             else
               TextSpan(
                 text: ' (Optional)',
-                style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary),
+                style: AppTextStyles.body
+                    .copyWith(fontSize: 12, color: AppColors.textSecondary),
               ),
           ],
         ),
@@ -440,9 +459,8 @@ class _AppTextField extends StatelessWidget {
     required this.hint,
     required this.controller,
     this.onChanged,
-    this.onSubmitted,
     this.errorText,
-  });
+  }) : onSubmitted = null;
 
   @override
   Widget build(BuildContext context) {

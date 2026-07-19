@@ -57,7 +57,15 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.background,
         elevation: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/pharmacy/inventory');
+              }
+            }),
         title: Text(widget.medicineName, style: AppTextStyles.subheading),
       ),
       body: SingleChildScrollView(
@@ -67,18 +75,15 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
           children: [
             Text('Inventory Item Details', style: AppTextStyles.heading),
             const SizedBox(height: 6),
-            Text('Expires on ${widget.initialExpiry}', style: AppTextStyles.body),
+            Text('Expires on ${widget.initialExpiry}',
+                style: AppTextStyles.body),
             const SizedBox(height: 24),
-
             const _FieldLabel('Batch Number'),
             _AppTextField(controller: _batchCtrl, hint: 'Batch Number'),
-
             const _FieldLabel('Supplier'),
             _AppTextField(controller: _supplierCtrl, hint: 'Supplier'),
-
             const _FieldLabel('Quantity in Stock'),
             _AppTextField(controller: _qtyCtrl, hint: 'Quantity'),
-
             const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,

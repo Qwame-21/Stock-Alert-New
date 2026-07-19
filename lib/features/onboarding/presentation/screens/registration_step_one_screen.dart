@@ -12,8 +12,7 @@ class RegistrationStepOneScreen extends StatefulWidget {
       _RegistrationStepOneScreenState();
 }
 
-class _RegistrationStepOneScreenState
-    extends State<RegistrationStepOneScreen> {
+class _RegistrationStepOneScreenState extends State<RegistrationStepOneScreen> {
   bool _obscurePassword = true;
 
   // Controllers for Patient
@@ -67,7 +66,7 @@ class _RegistrationStepOneScreenState
     _fullNameCtrl.text = state.fullName;
     _dobCtrl.text = state.dob;
     _genderCtrl.text = state.gender.isNotEmpty ? state.gender : 'Male';
-    
+
     // Parse phone country code if already set
     if (state.phoneNumber.isNotEmpty) {
       final match = _countries.firstWhere(
@@ -76,12 +75,13 @@ class _RegistrationStepOneScreenState
       );
       if (match['code']!.isNotEmpty) {
         _selectedCountryCode = match['code']!;
-        _phoneCtrl.text = state.phoneNumber.replaceFirst(_selectedCountryCode, '').trim();
+        _phoneCtrl.text =
+            state.phoneNumber.replaceFirst(_selectedCountryCode, '').trim();
       } else {
         _phoneCtrl.text = state.phoneNumber;
       }
     }
-    
+
     _emailCtrl.text = state.email;
     _passwordCtrl.text = state.password;
     _confirmPasswordCtrl.text = state.password;
@@ -126,6 +126,10 @@ class _RegistrationStepOneScreenState
       _validateField('password', _passwordCtrl.text);
       _validateField('confirmPassword', _confirmPasswordCtrl.text);
     } else {
+      _validateField('phone', _phoneCtrl.text);
+      _validateField('email', _emailCtrl.text);
+      _validateField('password', _passwordCtrl.text);
+      _validateField('confirmPassword', _confirmPasswordCtrl.text);
       _validateField('pharmacyName', _pharmacyNameCtrl.text);
       _validateField('license', _licenseCtrl.text);
       _validateField('authority', _authorityCtrl.text);
@@ -138,7 +142,8 @@ class _RegistrationStepOneScreenState
     setState(() {
       switch (fieldName) {
         case 'name':
-          _fullNameError = value.trim().isEmpty ? 'Full Name is required' : null;
+          _fullNameError =
+              value.trim().isEmpty ? 'Full Name is required' : null;
           break;
         case 'dob':
           _dobError = value.trim().isEmpty ? 'Date of birth is required' : null;
@@ -158,7 +163,8 @@ class _RegistrationStepOneScreenState
         case 'email':
           if (value.trim().isEmpty) {
             _emailError = 'Email Address is required';
-          } else if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+          } else if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+              .hasMatch(value)) {
             _emailError = 'Enter a valid email address';
           } else {
             _emailError = null;
@@ -174,7 +180,9 @@ class _RegistrationStepOneScreenState
           }
           // Re-validate confirm password if it's not empty
           if (_confirmPasswordCtrl.text.isNotEmpty) {
-            _confirmPasswordError = _confirmPasswordCtrl.text != value ? 'Passwords do not match' : null;
+            _confirmPasswordError = _confirmPasswordCtrl.text != value
+                ? 'Passwords do not match'
+                : null;
           }
           break;
         case 'confirmPassword':
@@ -187,19 +195,25 @@ class _RegistrationStepOneScreenState
           }
           break;
         case 'pharmacyName':
-          _pharmacyNameError = value.trim().isEmpty ? 'Pharmacy Name is required' : null;
+          _pharmacyNameError =
+              value.trim().isEmpty ? 'Pharmacy Name is required' : null;
           break;
         case 'license':
-          _licenseError = value.trim().isEmpty ? 'License Number is required' : null;
+          _licenseError =
+              value.trim().isEmpty ? 'License Number is required' : null;
           break;
         case 'authority':
-          _authorityError = value.trim().isEmpty ? 'Registration Authority is required' : null;
+          _authorityError = value.trim().isEmpty
+              ? 'Registration Authority is required'
+              : null;
           break;
         case 'location':
-          _locationError = value.trim().isEmpty ? 'Location / Address is required' : null;
+          _locationError =
+              value.trim().isEmpty ? 'Location / Address is required' : null;
           break;
         case 'hours':
-          _hoursError = value.trim().isEmpty ? 'Operating Hours are required' : null;
+          _hoursError =
+              value.trim().isEmpty ? 'Operating Hours are required' : null;
           break;
       }
     });
@@ -217,6 +231,11 @@ class _RegistrationStepOneScreenState
         password: _passwordCtrl.text,
       );
     } else {
+      cubit.updateAccountCredentials(
+        email: _emailCtrl.text.trim(),
+        phoneNumber: '$_selectedCountryCode ${_phoneCtrl.text.trim()}',
+        password: _passwordCtrl.text,
+      );
       cubit.updatePharmacyInfo(
         pharmacyName: _pharmacyNameCtrl.text,
         licenseNumber: _licenseCtrl.text,
@@ -228,7 +247,7 @@ class _RegistrationStepOneScreenState
     }
     // Save registration state to DB at step 1
     await cubit.saveProgress(1);
-    
+
     if (mounted) {
       context.push('/register/2');
     }
@@ -252,6 +271,10 @@ class _RegistrationStepOneScreenState
           _confirmPasswordError == null;
     } else {
       return _pharmacyNameCtrl.text.isNotEmpty &&
+          _phoneCtrl.text.isNotEmpty &&
+          _emailCtrl.text.isNotEmpty &&
+          _passwordCtrl.text.isNotEmpty &&
+          _confirmPasswordCtrl.text.isNotEmpty &&
           _licenseCtrl.text.isNotEmpty &&
           _authorityCtrl.text.isNotEmpty &&
           _locationCtrl.text.isNotEmpty &&
@@ -275,7 +298,17 @@ class _RegistrationStepOneScreenState
           appBar: AppBar(
             backgroundColor: AppColors.background,
             elevation: 0,
-            leading: const BackButton(color: AppColors.textPrimary),
+            leading: IconButton(
+              tooltip: 'Back',
+              icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+              onPressed: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/choose-role');
+                }
+              },
+            ),
             title: Text('1 of 4', style: AppTextStyles.label),
             centerTitle: false,
           ),
@@ -289,6 +322,7 @@ class _RegistrationStepOneScreenState
                 _phoneCtrl,
                 _emailCtrl,
                 _passwordCtrl,
+                _confirmPasswordCtrl,
                 _pharmacyNameCtrl,
                 _licenseCtrl,
                 _authorityCtrl,
@@ -332,8 +366,11 @@ class _RegistrationStepOneScreenState
                         readOnly: true,
                         onTap: () async {
                           // Make it easy to select DOB by starting at 18 years ago (adult default)
-                          final eighteenYearsAgo = DateTime.now().subtract(const Duration(days: 365 * 18));
-                          final initialDate = DateTime.tryParse(_dobCtrl.text) ?? eighteenYearsAgo;
+                          final eighteenYearsAgo = DateTime.now()
+                              .subtract(const Duration(days: 365 * 18));
+                          final initialDate =
+                              DateTime.tryParse(_dobCtrl.text) ??
+                                  eighteenYearsAgo;
                           final picked = await showDatePicker(
                             context: context,
                             initialDate: initialDate,
@@ -358,10 +395,18 @@ class _RegistrationStepOneScreenState
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButtonFormField<String>(
-                            value: _genderCtrl.text.isNotEmpty ? _genderCtrl.text : 'Male',
+                            initialValue: _genderCtrl.text.isNotEmpty
+                                ? _genderCtrl.text
+                                : 'Male',
                             items: [
-                              DropdownMenuItem(value: 'Male', child: Text('Male', style: AppTextStyles.subheading)),
-                              DropdownMenuItem(value: 'Female', child: Text('Female', style: AppTextStyles.subheading)),
+                              DropdownMenuItem(
+                                  value: 'Male',
+                                  child: Text('Male',
+                                      style: AppTextStyles.subheading)),
+                              DropdownMenuItem(
+                                  value: 'Female',
+                                  child: Text('Female',
+                                      style: AppTextStyles.subheading)),
                             ],
                             onChanged: (val) {
                               if (val != null) {
@@ -379,7 +424,9 @@ class _RegistrationStepOneScreenState
                       if (_genderError != null)
                         Padding(
                           padding: const EdgeInsets.only(left: 4, bottom: 8),
-                          child: Text(_genderError!, style: AppTextStyles.body.copyWith(color: AppColors.statusBad, fontSize: 12)),
+                          child: Text(_genderError!,
+                              style: AppTextStyles.body.copyWith(
+                                  color: AppColors.statusBad, fontSize: 12)),
                         ),
                       const _FieldLabel('Phone Number', isRequired: true),
                       Container(
@@ -412,13 +459,17 @@ class _RegistrationStepOneScreenState
                                 },
                               ),
                             ),
-                            const VerticalDivider(width: 16, thickness: 1, color: AppColors.hairline),
+                            const VerticalDivider(
+                                width: 16,
+                                thickness: 1,
+                                color: AppColors.hairline),
                             Expanded(
                               child: TextField(
                                 controller: _phoneCtrl,
                                 keyboardType: TextInputType.phone,
                                 style: AppTextStyles.subheading,
-                                onChanged: (val) => _validateField('phone', val),
+                                onChanged: (val) =>
+                                    _validateField('phone', val),
                                 decoration: InputDecoration(
                                   hintText: '24 123 4567',
                                   hintStyle: AppTextStyles.body,
@@ -432,7 +483,9 @@ class _RegistrationStepOneScreenState
                       if (_phoneError != null)
                         Padding(
                           padding: const EdgeInsets.only(left: 4, bottom: 8),
-                          child: Text(_phoneError!, style: AppTextStyles.body.copyWith(color: AppColors.statusBad, fontSize: 12)),
+                          child: Text(_phoneError!,
+                              style: AppTextStyles.body.copyWith(
+                                  color: AppColors.statusBad, fontSize: 12)),
                         ),
                       const _FieldLabel('Email Address', isRequired: true),
                       _AppTextField(
@@ -449,8 +502,8 @@ class _RegistrationStepOneScreenState
                         icon: _obscurePassword
                             ? Icons.visibility_off_outlined
                             : Icons.visibility_outlined,
-                        onIconTap: () =>
-                            setState(() => _obscurePassword = !_obscurePassword),
+                        onIconTap: () => setState(
+                            () => _obscurePassword = !_obscurePassword),
                         controller: _passwordCtrl,
                         errorText: _passwordError,
                         textInputAction: TextInputAction.next,
@@ -463,12 +516,13 @@ class _RegistrationStepOneScreenState
                         icon: _obscurePassword
                             ? Icons.visibility_off_outlined
                             : Icons.visibility_outlined,
-                        onIconTap: () =>
-                            setState(() => _obscurePassword = !_obscurePassword),
+                        onIconTap: () => setState(
+                            () => _obscurePassword = !_obscurePassword),
                         controller: _confirmPasswordCtrl,
                         errorText: _confirmPasswordError,
                         textInputAction: TextInputAction.done,
-                        onChanged: (val) => _validateField('confirmPassword', val),
+                        onChanged: (val) =>
+                            _validateField('confirmPassword', val),
                       ),
                     ] else ...[
                       const _FieldLabel('Pharmacy Name', isRequired: true),
@@ -487,7 +541,8 @@ class _RegistrationStepOneScreenState
                         textInputAction: TextInputAction.next,
                         onChanged: (val) => _validateField('license', val),
                       ),
-                      const _FieldLabel('Registration Authority', isRequired: true),
+                      const _FieldLabel('Registration Authority',
+                          isRequired: true),
                       _AppTextField(
                         hint: 'Pharmacy Council of Ghana',
                         controller: _authorityCtrl,
@@ -511,18 +566,51 @@ class _RegistrationStepOneScreenState
                         textInputAction: TextInputAction.next,
                         onChanged: (val) => _validateField('hours', val),
                       ),
-                      const _FieldLabel('Supplier Preference', isRequired: false),
+                      const _FieldLabel('Supplier Preference',
+                          isRequired: false),
                       _AppTextField(
                         hint: 'e.g. Standard Wholesales Ltd',
                         controller: _supplierCtrl,
                         textInputAction: TextInputAction.done,
+                      ),
+                      const _FieldLabel('Business Phone', isRequired: true),
+                      _AppTextField(
+                        hint: '+233 24 123 4567',
+                        controller: _phoneCtrl,
+                        errorText: _phoneError,
+                        onChanged: (val) => _validateField('phone', val),
+                      ),
+                      const _FieldLabel('Account Email', isRequired: true),
+                      _AppTextField(
+                        hint: 'owner@pharmacy.com',
+                        controller: _emailCtrl,
+                        errorText: _emailError,
+                        onChanged: (val) => _validateField('email', val),
+                      ),
+                      const _FieldLabel('Password', isRequired: true),
+                      _AppTextField(
+                        hint: '••••••••',
+                        controller: _passwordCtrl,
+                        obscureText: _obscurePassword,
+                        errorText: _passwordError,
+                        onChanged: (val) => _validateField('password', val),
+                      ),
+                      const _FieldLabel('Confirm Password', isRequired: true),
+                      _AppTextField(
+                        hint: '••••••••',
+                        controller: _confirmPasswordCtrl,
+                        obscureText: _obscurePassword,
+                        errorText: _confirmPasswordError,
+                        onChanged: (val) =>
+                            _validateField('confirmPassword', val),
                       ),
                     ],
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: isValid ? () => _onContinue(isPatient) : null,
+                        onPressed:
+                            isValid ? () => _onContinue(isPatient) : null,
                         child: const Text('Continue'),
                       ),
                     ),
@@ -555,12 +643,14 @@ class _FieldLabel extends StatelessWidget {
             if (isRequired)
               TextSpan(
                 text: ' (Required)',
-                style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary),
+                style: AppTextStyles.body
+                    .copyWith(fontSize: 12, color: AppColors.textSecondary),
               )
             else
               TextSpan(
                 text: ' (Optional)',
-                style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary),
+                style: AppTextStyles.body
+                    .copyWith(fontSize: 12, color: AppColors.textSecondary),
               ),
           ],
         ),
@@ -645,7 +735,8 @@ class _AppTextFieldState extends State<_AppTextField> {
                 suffixIcon: widget.icon == null
                     ? null
                     : IconButton(
-                        icon: Icon(widget.icon, color: AppColors.textSecondary, size: 20),
+                        icon: Icon(widget.icon,
+                            color: AppColors.textSecondary, size: 20),
                         onPressed: widget.onIconTap,
                       ),
               ),

@@ -20,6 +20,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
+  bool _saving = false;
 
   String? _currentError;
   String? _newError;
@@ -35,14 +36,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
   void _validateField(String fieldName, String value) {
     setState(() {
-      final state = context.read<RegistrationCubit>().state;
-      final savedPassword = state.password.isNotEmpty ? state.password : 'password123';
-
       if (fieldName == 'current') {
         if (value.isEmpty) {
           _currentError = 'Current password is required';
-        } else if (value != savedPassword) {
-          _currentError = 'Incorrect current password';
         } else {
           _currentError = null;
         }
@@ -81,33 +77,52 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     _validateField('new', newPass);
     _validateField('confirm', confirm);
 
-    if (_currentError != null || _newError != null || _confirmError != null) return;
+    if (_currentError != null || _newError != null || _confirmError != null) {
+      return;
+    }
 
+    setState(() => _saving = true);
     try {
-      // Update password via Supabase Auth
+      final auth = Supabase.instance.client.auth;
+      final email = auth.currentUser?.email;
+      if (email == null) {
+        throw const AuthException(
+            'Your session has expired. Please sign in again.');
+      }
+      // Supabase only updates the password after the old credential has been
+      // verified. This prevents a stale unlocked session changing it silently.
+      await auth.signInWithPassword(email: email, password: current);
       await Supabase.instance.client.auth.updateUser(
         UserAttributes(password: newPass),
       );
+
+      if (!mounted) return;
 
       // Also update the in-memory Cubit state (for UI display only, never persisted)
       final cubit = context.read<RegistrationCubit>();
       cubit.updatePassword(newPass);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Password changed successfully')),
-        );
-        context.pop();
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password changed successfully')),
+      );
+      context.pop();
     } on AuthException catch (e) {
       if (mounted) {
+        final wrongPassword = e.message.toLowerCase().contains('invalid login');
+        if (wrongPassword) {
+          setState(() => _currentError = 'Incorrect current password');
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.message),
+            content: Text(wrongPassword
+                ? 'The current password is incorrect.'
+                : e.message),
             backgroundColor: AppColors.statusBad,
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -151,7 +166,6 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   style: AppTextStyles.body,
                 ),
                 const SizedBox(height: 32),
-
                 const _FieldLabel('Current Password', isRequired: true),
                 _AppTextField(
                   hint: '••••••••••••',
@@ -165,7 +179,6 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   errorText: _currentError,
                   onChanged: (val) => _validateField('current', val),
                 ),
-
                 const _FieldLabel('New Password', isRequired: true),
                 _AppTextField(
                   hint: '••••••••••••',
@@ -173,13 +186,11 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   icon: _obscureNew
                       ? Icons.visibility_off_outlined
                       : Icons.visibility_outlined,
-                  onIconTap: () =>
-                      setState(() => _obscureNew = !_obscureNew),
+                  onIconTap: () => setState(() => _obscureNew = !_obscureNew),
                   controller: _newPasswordCtrl,
                   errorText: _newError,
                   onChanged: (val) => _validateField('new', val),
                 ),
-
                 const _FieldLabel('Confirm New Password', isRequired: true),
                 _AppTextField(
                   hint: '••••••••••••',
@@ -193,13 +204,12 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   errorText: _confirmError,
                   onChanged: (val) => _validateField('confirm', val),
                 ),
-
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: isValid ? _handleSave : null,
-                    child: const Text('Update Password'),
+                    onPressed: isValid && !_saving ? _handleSave : null,
+                    child: Text(_saving ? 'Updating…' : 'Update Password'),
                   ),
                 ),
               ],
@@ -228,7 +238,8 @@ class _FieldLabel extends StatelessWidget {
             if (isRequired)
               TextSpan(
                 text: ' (Required)',
-                style: AppTextStyles.body.copyWith(fontSize: 12, color: AppColors.textSecondary),
+                style: AppTextStyles.body
+                    .copyWith(fontSize: 12, color: AppColors.textSecondary),
               ),
           ],
         ),
@@ -304,7 +315,8 @@ class _AppTextFieldState extends State<_AppTextField> {
                 suffixIcon: widget.icon == null
                     ? null
                     : IconButton(
-                        icon: Icon(widget.icon, color: AppColors.textSecondary, size: 20),
+                        icon: Icon(widget.icon,
+                            color: AppColors.textSecondary, size: 20),
                         onPressed: widget.onIconTap,
                       ),
               ),

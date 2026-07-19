@@ -23,7 +23,8 @@ class AppColors {
   static const Color statusBad = Color(0xFFB3261E);
 
   // used behind frosted glass panels
-  static const Color glassTint = Color(0x66FFFFFF); // more translucent for higher contrast against background
+  static const Color glassTint = Color(
+      0x66FFFFFF); // more translucent for higher contrast against background
 }
 
 class AppRadius {
@@ -80,6 +81,8 @@ ThemeData buildAppTheme() {
       seedColor: AppColors.accent,
       surface: AppColors.surface,
     ),
+    iconTheme: const IconThemeData(color: AppColors.textPrimary),
+    listTileTheme: const ListTileThemeData(iconColor: AppColors.textPrimary),
     textTheme: base.copyWith(
       headlineSmall: AppTextStyles.heading,
       titleMedium: AppTextStyles.subheading,
@@ -102,6 +105,60 @@ ThemeData buildAppTheme() {
         ),
       ),
     ),
+    navigationBarTheme: NavigationBarThemeData(
+      height: 78,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      indicatorColor: const Color(0xFFF0F0F0),
+      indicatorShape: const CircleBorder(),
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          size: states.contains(WidgetState.selected) ? 27 : 24,
+          color: states.contains(WidgetState.selected)
+              ? AppColors.accent
+              : AppColors.textSecondary,
+        ),
+      ),
+      labelTextStyle: WidgetStateProperty.all(
+        GoogleFonts.poppins(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: AppColors.textPrimary,
+        ),
+      ),
+    ),
+    datePickerTheme: DatePickerThemeData(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      headerBackgroundColor: AppColors.accent,
+      headerForegroundColor: Colors.white,
+      dayForegroundColor: WidgetStateProperty.resolveWith((states) =>
+          states.contains(WidgetState.selected)
+              ? Colors.white
+              : AppColors.textPrimary),
+      dayBackgroundColor: WidgetStateProperty.resolveWith((states) =>
+          states.contains(WidgetState.selected)
+              ? AppColors.accent
+              : Colors.transparent),
+      todayForegroundColor: const WidgetStatePropertyAll(AppColors.accent),
+      todayBorder: const BorderSide(color: AppColors.accent),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    ),
   );
 }
 
+class AppScrollBehavior extends MaterialScrollBehavior {
+  const AppScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) =>
+      child;
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) =>
+      const ClampingScrollPhysics();
+}
