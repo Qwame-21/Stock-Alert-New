@@ -24,7 +24,7 @@ class LocalDbService {
 
     return await openDatabase(
       path,
-      version: 7,
+      version: 9,
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -85,6 +85,35 @@ class LocalDbService {
                 db, 'inventory', column.key, column.value);
           }
         }
+        if (oldVersion < 8) {
+          for (final column in const {
+            'requestedAt': 'TEXT',
+            'reviewedAt': 'TEXT',
+            'respondedAt': 'TEXT',
+            'decisionNote': 'TEXT',
+          }.entries) {
+            await _addColumnIfMissing(
+              db,
+              'bookings',
+              column.key,
+              column.value,
+            );
+          }
+        }
+        if (oldVersion < 9) {
+          for (final column in const {
+            'consultationMode': 'TEXT',
+            'clinicalReason': 'TEXT',
+            'patientCondition': 'TEXT',
+            'requestedSupport': 'TEXT',
+            'consultationFee': 'REAL',
+            'depositAmount': 'REAL',
+            'paymentStatus': "TEXT NOT NULL DEFAULT 'unpaid'",
+            'cancellationCategory': 'TEXT',
+          }.entries) {
+            await _addColumnIfMissing(db, 'bookings', column.key, column.value);
+          }
+        }
       },
     );
   }
@@ -116,7 +145,7 @@ class LocalDbService {
           manufacturer TEXT NOT NULL DEFAULT '', reorderLevel INTEGER NOT NULL DEFAULT 0,
           unitPrice REAL, currency TEXT NOT NULL DEFAULT 'GHS')''');
     await db.execute(
-        'CREATE TABLE IF NOT EXISTS bookings (id TEXT PRIMARY KEY, doctorName TEXT, specialty TEXT, date TEXT, time TEXT, avatarUrl TEXT, videoLink TEXT, notes TEXT, version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT "pending", providerId TEXT)');
+        'CREATE TABLE IF NOT EXISTS bookings (id TEXT PRIMARY KEY, doctorName TEXT, specialty TEXT, date TEXT, time TEXT, avatarUrl TEXT, videoLink TEXT, notes TEXT, version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT "pending", providerId TEXT, requestedAt TEXT, reviewedAt TEXT, respondedAt TEXT, decisionNote TEXT, consultationMode TEXT, clinicalReason TEXT, patientCondition TEXT, requestedSupport TEXT, consultationFee REAL, depositAmount REAL, paymentStatus TEXT NOT NULL DEFAULT "unpaid", cancellationCategory TEXT)');
     await db.execute(
       'CREATE TABLE IF NOT EXISTS sync_queue ('
       'mutationId TEXT PRIMARY KEY, entityType TEXT NOT NULL, '

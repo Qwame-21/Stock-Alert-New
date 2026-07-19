@@ -33,6 +33,14 @@ const bookingRecordSchema = z.object({
   responded_at: z.string().nullable(),
   responded_by: z.string().uuid().nullable(),
   decision_note: z.string().nullable(),
+  consultation_mode: z.enum(["video", "in_person"]).nullable(),
+  clinical_reason: z.string().nullable(),
+  patient_condition: z.string().nullable(),
+  requested_support: z.string().nullable(),
+  consultation_fee: z.coerce.number().nullable(),
+  deposit_amount: z.coerce.number().nullable(),
+  payment_status: z.string(),
+  cancellation_category: z.string().nullable(),
   version: z.coerce.number().int(),
 });
 
@@ -136,7 +144,7 @@ export async function listBookings(
   let query = getSupabaseAdmin()
     .from("appointments")
     .select(
-      "id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, version",
+      "id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, consultation_mode, clinical_reason, patient_condition, requested_support, consultation_fee, deposit_amount, payment_status, cancellation_category, version",
       { count: "exact" },
     )
     .or(participantFilter)
@@ -166,7 +174,7 @@ export async function getBooking(actorId: string, bookingId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("appointments")
     .select(
-      "id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, version",
+      "id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, consultation_mode, clinical_reason, patient_condition, requested_support, consultation_fee, deposit_amount, payment_status, cancellation_category, version",
     )
     .eq("id", bookingId)
     .is("deleted_at", null)
@@ -207,7 +215,7 @@ export async function createBooking(
   const { data: provider, error: providerError } = await getSupabaseAdmin()
     .from("consultation_providers")
     .select(
-      "profile_id,display_name,specialty,consultation_duration,verification_status,is_accepting_bookings",
+      "profile_id,display_name,specialty,consultation_duration,consultation_mode,video_fee,in_person_fee,verification_status,is_accepting_bookings",
     )
     .eq("profile_id", input.providerId)
     .maybeSingle();
@@ -227,6 +235,9 @@ export async function createBooking(
       "PROVIDER_UNAVAILABLE",
       "This provider is not accepting bookings.",
     );
+  }
+  if (provider.consultation_mode !== "both" && provider.consultation_mode !== input.consultationMode) {
+    throw new HttpError(409, "INTERACTION_MODE_UNAVAILABLE", "This provider does not offer the selected consultation type.");
   }
   const scheduled = new Date(input.scheduledAt);
   const weekday = scheduled.getDay() || 7;
@@ -269,12 +280,23 @@ export async function createBooking(
     bookingFailure(error);
   }
 
-  const appointment = bookingRecordSchema.parse(data);
-  await getSupabaseAdmin()
+  const fee = Number(input.consultationMode === "video" ? provider.video_fee : provider.in_person_fee);
+  const { data: enriched, error: enrichError } = await getSupabaseAdmin()
     .from("appointments")
-    .update({ provider_profile_id: provider.profile_id })
-    .eq("id", appointment.id);
-  return appointment;
+    .update({
+      provider_profile_id: provider.profile_id,
+      consultation_mode: input.consultationMode,
+      clinical_reason: input.clinicalReason,
+      patient_condition: input.patientCondition,
+      requested_support: input.requestedSupport,
+      consultation_fee: fee,
+      deposit_amount: Math.round(fee * 50) / 100,
+    })
+    .eq("id", data.id)
+    .select("id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, consultation_mode, clinical_reason, patient_condition, requested_support, consultation_fee, deposit_amount, payment_status, cancellation_category, version")
+    .single();
+  if (enrichError) bookingFailure(enrichError);
+  return bookingRecordSchema.parse(enriched);
 }
 
 export async function updateBooking(
@@ -306,7 +328,7 @@ export async function updateBooking(
       })
       .eq("id", bookingId)
       .eq("version", input.expectedVersion)
-      .select("id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, version")
+      .select("id, patient_profile_id, provider_profile_id, pharmacy_id, provider_name, specialty, scheduled_at, duration_minutes, status, video_link, notes, cancellation_reason, requested_at, reviewed_at, responded_at, responded_by, decision_note, consultation_mode, clinical_reason, patient_condition, requested_support, consultation_fee, deposit_amount, payment_status, cancellation_category, version")
       .maybeSingle();
     if (error) bookingFailure(error);
     if (!data) throw new HttpError(409, "VERSION_CONFLICT", "The appointment changed on another device.");
@@ -339,7 +361,7 @@ export async function cancelBooking(
   bookingId: string,
   input: CancelBookingInput,
 ) {
-  const { data, error } = await getSupabaseAdmin().rpc("cancel_appointment", {
+  const { error } = await getSupabaseAdmin().rpc("cancel_appointment", {
     actor_id: actorId,
     appointment_id: bookingId,
     mutation_id: input.mutationId,
@@ -350,6 +372,6 @@ export async function cancelBooking(
   if (error) {
     bookingFailure(error);
   }
-
-  return bookingRecordSchema.parse(data);
+  await getSupabaseAdmin().from("appointments").update({ cancellation_category: input.category }).eq("id", bookingId);
+  return getBooking(actorId, bookingId);
 }

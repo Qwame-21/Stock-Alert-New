@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/storage/local_db_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/top_notice.dart';
 
 class SavedPlacesScreen extends StatefulWidget {
   const SavedPlacesScreen({super.key});
@@ -40,8 +42,10 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
     _label.clear();
     _address.clear();
     if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Place saved.')));
+      showTopNotice(context,
+          title: 'Place saved',
+          message: 'It is ready for nearby pharmacy searches.',
+          type: TopNoticeType.success);
     }
   }
 
@@ -67,16 +71,29 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
                   const SizedBox(height: 18),
                   ..._places.asMap().entries.map((entry) => Card(
                           child: ListTile(
+                        onTap: () => context.push('/patient/nearby', extra: {
+                          'search': entry.value['address'] as String,
+                        }),
                         leading: const Icon(Icons.place_outlined),
                         title: Text(entry.value['label'] as String),
                         subtitle: Text(entry.value['address'] as String),
-                        trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () async {
-                              setState(() => _places.removeAt(entry.key));
-                              await LocalDbService()
-                                  .write('saved_places', jsonEncode(_places));
-                            }),
+                        trailing: Wrap(children: [
+                          IconButton(
+                              tooltip: 'Show on map',
+                              icon: const Icon(Icons.map_outlined),
+                              onPressed: () => context
+                                      .push('/patient/nearby', extra: {
+                                    'search': entry.value['address'] as String
+                                  })),
+                          IconButton(
+                              tooltip: 'Delete place',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () async {
+                                setState(() => _places.removeAt(entry.key));
+                                await LocalDbService()
+                                    .write('saved_places', jsonEncode(_places));
+                              }),
+                        ]),
                       ))),
                   if (_places.isNotEmpty) const SizedBox(height: 18),
                   Text('Add a place', style: AppTextStyles.subheading),

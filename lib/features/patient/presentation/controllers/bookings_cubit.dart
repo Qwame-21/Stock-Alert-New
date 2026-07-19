@@ -70,12 +70,13 @@ class BookingsCubit extends Cubit<BookingsState> {
     }
   }
 
-  Future<void> removeBooking(String id) async {
+  Future<void> removeBooking(String id,
+      {required String category, required String reason}) async {
     final current = List<Appointment>.from(state.appointments);
     final appointment = current.firstWhere((item) => item.id == id);
-    await _repository.cancel(appointment);
-    current.removeWhere((appt) => appt.id == id);
-    emit(state.copyWith(appointments: current));
+    await _repository.cancel(appointment, category: category, reason: reason);
+    final refreshed = await _repository.load();
+    emit(state.copyWith(appointments: refreshed));
   }
 
   Future<void> decideBooking(String id, String status, {String? note}) async {

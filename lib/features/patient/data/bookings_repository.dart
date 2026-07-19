@@ -32,11 +32,12 @@ class BookingsRepository {
   }
 
   Future<Appointment> add(Appointment appointment) async {
-    await _db.insertBooking(appointment.toJson());
-    if (!ApiConfig.remoteBookingsEnabled) return appointment;
+    if (!ApiConfig.remoteBookingsEnabled) {
+      await _db.insertBooking(appointment.toJson());
+      return appointment;
+    }
     final scheduledAt = _scheduledAt(appointment);
     if (!scheduledAt.isAfter(DateTime.now().add(const Duration(minutes: 5)))) {
-      await _db.deleteBooking(appointment.id);
       throw StateError(
         'Choose an appointment time at least five minutes in the future.',
       );
@@ -47,25 +48,24 @@ class BookingsRepository {
       'providerName': appointment.doctorName,
       'specialty': appointment.specialty,
       'scheduledAt': scheduledAt.toUtc().toIso8601String(),
+      'consultationMode': appointment.consultationMode,
+      'clinicalReason': appointment.clinicalReason,
+      'patientCondition': appointment.patientCondition,
+      'requestedSupport': appointment.requestedSupport,
       'notes': appointment.notes,
     };
-    try {
-      final response = await _api.post('/api/v1/bookings', body: {
-        'mutationId': mutationId,
-        ...payload,
-      });
-      final saved =
-          Appointment.fromApi(Map<String, dynamic>.from(response.data as Map));
-      await _db.deleteBooking(appointment.id);
-      await _db.insertBooking(saved.toJson());
-      return saved;
-    } catch (error) {
-      await _db.deleteBooking(appointment.id);
-      rethrow;
-    }
+    final response = await _api.post('/api/v1/bookings', body: {
+      'mutationId': mutationId,
+      ...payload,
+    });
+    final saved =
+        Appointment.fromApi(Map<String, dynamic>.from(response.data as Map));
+    await _db.insertBooking(saved.toJson());
+    return saved;
   }
 
-  Future<void> cancel(Appointment appointment) async {
+  Future<void> cancel(Appointment appointment,
+      {required String category, required String reason}) async {
     if (!ApiConfig.remoteBookingsEnabled) {
       await _db.deleteBooking(appointment.id);
       return;
@@ -73,7 +73,8 @@ class BookingsRepository {
     final mutationId = const Uuid().v4();
     final payload = {
       'expectedVersion': appointment.version,
-      'reason': 'Cancelled by patient',
+      'reason': reason,
+      'category': category,
     };
     try {
       await _api.delete('/api/v1/bookings/${appointment.id}', body: {

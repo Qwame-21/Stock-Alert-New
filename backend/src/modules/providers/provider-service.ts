@@ -8,7 +8,7 @@ function timeOnDate(date: string, time: string) {
 export async function listProviders(date: string, specialty?: string) {
   let query = getSupabaseAdmin()
     .from("consultation_providers")
-    .select("profile_id, display_name, specialty, years_experience, bio, consultation_mode, location, consultation_duration, verification_status, provider_availability(weekday,start_time,end_time,is_active)")
+    .select("profile_id, display_name, specialty, years_experience, bio, consultation_mode, location, consultation_duration, video_fee, in_person_fee, currency, verification_status, provider_availability(weekday,start_time,end_time,is_active)")
     .eq("verification_status", "verified")
     .eq("is_accepting_bookings", true)
     .order("display_name");
@@ -53,6 +53,7 @@ export async function listProviders(date: string, specialty?: string) {
         cursor = slotEnd;
       }
     }
+    const { data: avatar } = getSupabaseAdmin().storage.from("avatars").getPublicUrl(`${provider.profile_id}/profile.png`);
     return {
       id: provider.profile_id,
       name: provider.display_name,
@@ -62,6 +63,10 @@ export async function listProviders(date: string, specialty?: string) {
       consultationMode: provider.consultation_mode,
       location: provider.location,
       durationMinutes: duration,
+      videoFee: Number(provider.video_fee),
+      inPersonFee: Number(provider.in_person_fee),
+      currency: provider.currency,
+      avatarUrl: avatar.publicUrl,
       slots,
     };
   });
@@ -70,12 +75,15 @@ export async function listProviders(date: string, specialty?: string) {
 export async function getProviderAccount(userId: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("consultation_providers")
-    .select("profile_id,display_name,specialty,professional_license,registration_authority,years_experience,bio,consultation_mode,location,consultation_duration,verification_status,is_accepting_bookings,provider_availability(id,weekday,start_time,end_time,is_active)")
+    .select("profile_id,display_name,specialty,professional_license,registration_authority,years_experience,bio,consultation_mode,location,consultation_duration,video_fee,in_person_fee,currency,verification_status,is_accepting_bookings,provider_availability(id,weekday,start_time,end_time,is_active)")
     .eq("profile_id", userId)
     .maybeSingle();
   if (error) throw new HttpError(502, "PROVIDER_PROFILE_UNAVAILABLE", "Provider profile could not be loaded.");
   if (!data) throw new HttpError(404, "PROVIDER_PROFILE_NOT_FOUND", "Consultation provider profile was not found.");
-  return data;
+  const { data: avatar } = getSupabaseAdmin().storage
+    .from("avatars")
+    .getPublicUrl(`${userId}/profile.png`);
+  return { ...data, avatar_url: avatar.publicUrl };
 }
 
 export async function updateAvailability(
@@ -84,6 +92,9 @@ export async function updateAvailability(
     isAcceptingBookings: boolean;
     consultationDuration: number;
     availability: Array<{ weekday: number; startTime: string; endTime: string }>;
+    consultationMode: "video" | "in_person" | "both";
+    videoFee: number;
+    inPersonFee: number;
   },
 ) {
   const admin = getSupabaseAdmin();
@@ -92,6 +103,9 @@ export async function updateAvailability(
     .update({
       is_accepting_bookings: input.isAcceptingBookings,
       consultation_duration: input.consultationDuration,
+      consultation_mode: input.consultationMode,
+      video_fee: input.videoFee,
+      in_person_fee: input.inPersonFee,
     })
     .eq("profile_id", userId);
   if (profileError) throw new HttpError(502, "AVAILABILITY_UPDATE_FAILED", "Provider settings could not be saved.");

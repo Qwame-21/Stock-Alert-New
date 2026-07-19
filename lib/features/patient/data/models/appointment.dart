@@ -14,6 +14,14 @@ class Appointment {
   final DateTime? reviewedAt;
   final DateTime? respondedAt;
   final String? decisionNote;
+  final String? consultationMode;
+  final String? clinicalReason;
+  final String? patientCondition;
+  final String? requestedSupport;
+  final double? consultationFee;
+  final double? depositAmount;
+  final String paymentStatus;
+  final String? cancellationCategory;
 
   const Appointment({
     required this.id,
@@ -31,6 +39,14 @@ class Appointment {
     this.reviewedAt,
     this.respondedAt,
     this.decisionNote,
+    this.consultationMode,
+    this.clinicalReason,
+    this.patientCondition,
+    this.requestedSupport,
+    this.consultationFee,
+    this.depositAmount,
+    this.paymentStatus = 'unpaid',
+    this.cancellationCategory,
   });
 
   Map<String, dynamic> toJson() {
@@ -50,6 +66,14 @@ class Appointment {
       'reviewedAt': reviewedAt?.toIso8601String(),
       'respondedAt': respondedAt?.toIso8601String(),
       'decisionNote': decisionNote,
+      'consultationMode': consultationMode,
+      'clinicalReason': clinicalReason,
+      'patientCondition': patientCondition,
+      'requestedSupport': requestedSupport,
+      'consultationFee': consultationFee,
+      'depositAmount': depositAmount,
+      'paymentStatus': paymentStatus,
+      'cancellationCategory': cancellationCategory,
     };
   }
 
@@ -70,6 +94,14 @@ class Appointment {
       reviewedAt: DateTime.tryParse(json['reviewedAt'] as String? ?? ''),
       respondedAt: DateTime.tryParse(json['respondedAt'] as String? ?? ''),
       decisionNote: json['decisionNote'] as String?,
+      consultationMode: json['consultationMode'] as String?,
+      clinicalReason: json['clinicalReason'] as String?,
+      patientCondition: json['patientCondition'] as String?,
+      requestedSupport: json['requestedSupport'] as String?,
+      consultationFee: (json['consultationFee'] as num?)?.toDouble(),
+      depositAmount: (json['depositAmount'] as num?)?.toDouble(),
+      paymentStatus: json['paymentStatus'] as String? ?? 'unpaid',
+      cancellationCategory: json['cancellationCategory'] as String?,
     );
   }
 
@@ -99,6 +131,14 @@ class Appointment {
       respondedAt:
           DateTime.tryParse(json['responded_at'] as String? ?? '')?.toLocal(),
       decisionNote: json['decision_note'] as String?,
+      consultationMode: json['consultation_mode'] as String?,
+      clinicalReason: json['clinical_reason'] as String?,
+      patientCondition: json['patient_condition'] as String?,
+      requestedSupport: json['requested_support'] as String?,
+      consultationFee: (json['consultation_fee'] as num?)?.toDouble(),
+      depositAmount: (json['deposit_amount'] as num?)?.toDouble(),
+      paymentStatus: json['payment_status'] as String? ?? 'unpaid',
+      cancellationCategory: json['cancellation_category'] as String?,
     );
   }
 }

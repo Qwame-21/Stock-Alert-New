@@ -16,7 +16,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "seed:demo": "node --env-file=.env.local scripts/seed-demo.mjs",
+    "verify:demo": "node --env-file=.env.local scripts/verify-demo.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.7",

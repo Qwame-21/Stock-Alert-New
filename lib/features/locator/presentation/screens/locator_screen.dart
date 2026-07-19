@@ -77,13 +77,33 @@ class _LocatorScreenState extends State<LocatorScreen> {
     try {
       final results = await _repository.search(query);
       if (!mounted) return;
+      final highlighted = widget.highlightPharmacyName?.toLowerCase();
+      final normalizedQuery = query.trim().toLowerCase();
+      final ordered = [...results]..sort((left, right) {
+          int rank(DiscoveredPharmacy pharmacy) {
+            if (highlighted != null &&
+                pharmacy.name.toLowerCase() == highlighted) {
+              return 0;
+            }
+            if (normalizedQuery.isNotEmpty &&
+                pharmacy.location.toLowerCase().contains(normalizedQuery)) {
+              return 1;
+            }
+            return 2;
+          }
+
+          final relevance = rank(left).compareTo(rank(right));
+          if (relevance != 0) return relevance;
+          return left.location
+              .toLowerCase()
+              .compareTo(right.location.toLowerCase());
+        });
       setState(() {
-        _pharmacies = results;
+        _pharmacies = ordered;
         _isLoading = false;
-        final highlighted = widget.highlightPharmacyName;
         if (_selectedPharmacyId == null && highlighted != null) {
-          for (final pharmacy in results) {
-            if (pharmacy.name.toLowerCase() == highlighted.toLowerCase()) {
+          for (final pharmacy in ordered) {
+            if (pharmacy.name.toLowerCase() == highlighted) {
               _selectedPharmacyId = pharmacy.id;
               break;
             }
@@ -530,7 +550,14 @@ class _LocatorScreenState extends State<LocatorScreen> {
                         ),
                         onMapCreated: (controller) {
                           _mapController = controller;
-                          _fitMarkers();
+                          final selected = _pharmacies
+                              .where((item) => item.id == _selectedPharmacyId)
+                              .firstOrNull;
+                          if (selected != null) {
+                            _selectPharmacy(selected);
+                          } else {
+                            _fitMarkers();
+                          }
                         },
                       )
                     : const _MapUnavailable(),
@@ -711,7 +738,7 @@ class _MapControls extends StatelessWidget {
   }
 }
 
-class _ResultsSheet extends StatelessWidget {
+class _ResultsSheet extends StatefulWidget {
   final List<DiscoveredPharmacy> pharmacies;
   final String? selectedId;
   final bool isLoading;
@@ -747,114 +774,289 @@ class _ResultsSheet extends StatelessWidget {
   });
 
   @override
+  State<_ResultsSheet> createState() => _ResultsSheetState();
+}
+
+class _ResultsSheetState extends State<_ResultsSheet> {
+  static const _minExtent = .22;
+  static const _maxExtent = .88;
+  final _listController = ScrollController();
+  double _extent = .34;
+  bool _isDraggingHandle = false;
+
+  double get _restingExtent => widget.searchedPlaces.isEmpty ? .34 : .46;
+
+  @override
+  void didUpdateWidget(covariant _ResultsSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.searchedPlaces.isEmpty != widget.searchedPlaces.isEmpty &&
+        _extent != _maxExtent) {
+      _extent = _restingExtent;
+    }
+  }
+
+  @override
+  void dispose() {
+    _listController.dispose();
+    super.dispose();
+  }
+
+  void _dragHandle(DragUpdateDetails details) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    setState(() {
+      _extent = (_extent - details.delta.dy / screenHeight)
+          .clamp(_minExtent, _maxExtent);
+    });
+  }
+
+  void _startHandleDrag(DragStartDetails details) {
+    setState(() => _isDraggingHandle = true);
+  }
+
+  void _snapHandle(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    final targets = [_minExtent, _restingExtent, _maxExtent];
+    double target;
+    if (velocity < -500) {
+      target = _maxExtent;
+    } else if (velocity > 500) {
+      target = _minExtent;
+    } else {
+      target = targets.reduce(
+        (left, right) =>
+            (_extent - left).abs() < (_extent - right).abs() ? left : right,
+      );
+    }
+    setState(() {
+      _isDraggingHandle = false;
+      _extent = target;
+    });
+  }
+
+  void _selectPharmacy(DiscoveredPharmacy pharmacy) {
+    widget.onSelected(pharmacy);
+    if (_listController.hasClients) {
+      _listController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    }
+    setState(() {
+      _isDraggingHandle = false;
+      _extent = _minExtent;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: searchedPlaces.isEmpty ? 0.34 : 0.46,
-      minChildSize: 0.22,
-      maxChildSize: 0.88,
-      snap: true,
-      snapSizes:
-          searchedPlaces.isEmpty ? const [0.34, 0.88] : const [0.46, 0.88],
-      builder: (context, scrollController) => Container(
+    final pharmacies = [...widget.pharmacies]..sort((left, right) {
+        if (left.id == widget.selectedId) return -1;
+        if (right.id == widget.selectedId) return 1;
+        return 0;
+      });
+    final selectedId = widget.selectedId;
+    final isLoading = widget.isLoading;
+    final error = widget.error;
+    final onRetry = widget.onRetry;
+    final onDirections = widget.onDirections;
+    final currentPosition = widget.currentPosition;
+    final searchedPlaces = widget.searchedPlaces;
+    final selectedPlace = widget.selectedPlace;
+    final onPlaceSelected = widget.onPlaceSelected;
+    final onPlaceDirections = widget.onPlaceDirections;
+    final routeSummary = widget.routeSummary;
+    final isLoadingRoute = widget.isLoadingRoute;
+    final routeError = widget.routeError;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: _extent),
+      duration:
+          _isDraggingHandle ? Duration.zero : const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+      builder: (context, heightFactor, child) => FractionallySizedBox(
+        heightFactor: heightFactor,
+        alignment: Alignment.bottomCenter,
+        child: child,
+      ),
+      child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 16)],
         ),
-        child: CustomScrollView(
-          controller: scrollController,
-          slivers: [
-            SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  const SizedBox(height: 8),
-                  Container(
-                    width: 42,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: AppColors.hairline,
-                      borderRadius: BorderRadius.circular(99),
+        child: Column(
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragStart: _startHandleDrag,
+              onVerticalDragUpdate: _dragHandle,
+              onVerticalDragEnd: _snapHandle,
+              child: Semantics(
+                label: 'Drag to resize pharmacy results',
+                child: SizedBox(
+                  height: 34,
+                  child: Center(
+                    child: Container(
+                      width: 42,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: AppColors.hairline,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                    child: Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      spacing: 12,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          searchedPlaces.isEmpty
-                              ? '${pharmacies.length} pharmacies'
-                              : '${searchedPlaces.length} places • ${pharmacies.length} pharmacies',
-                          style: AppTextStyles.subheading,
-                        ),
-                        Text(
-                          'Pull up to see all',
-                          style: AppTextStyles.label.copyWith(
-                            color: AppColors.statusGood,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 12,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    searchedPlaces.isEmpty
+                        ? '${pharmacies.length} pharmacies'
+                        : '${searchedPlaces.length} places • ${pharmacies.length} pharmacies',
+                    style: AppTextStyles.subheading,
+                  ),
+                  Text(
+                    'Drag handle to resize • scroll below',
+                    style: AppTextStyles.label.copyWith(
+                      color: AppColors.statusGood,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (searchedPlaces.isNotEmpty)
+              SizedBox(
+                height: 88,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  itemCount: searchedPlaces.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (context, index) {
+                    final place = searchedPlaces[index];
+                    final selected = place == selectedPlace;
+                    final distance = currentPosition == null
+                        ? null
+                        : Geolocator.distanceBetween(
+                              currentPosition.latitude,
+                              currentPosition.longitude,
+                              place.position.latitude,
+                              place.position.longitude,
+                            ) /
+                            1000;
+                    return Material(
+                      color: selected
+                          ? const Color(0xFFEAF2F1)
+                          : const Color(0xFFF5F6F6),
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        onTap: () => onPlaceSelected(place),
+                        borderRadius: BorderRadius.circular(14),
+                        child: SizedBox(
+                          width: 285,
+                          child: ListTile(
+                            leading: const Icon(Icons.place_outlined),
+                            title: Text(place.label,
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(
+                              selected && isLoadingRoute
+                                  ? 'Calculating driving route…'
+                                  : selected && routeError != null
+                                      ? routeError
+                                      : selected && routeSummary != null
+                                          ? '${routeSummary.distanceKm.toStringAsFixed(1)} km • ${routeSummary.durationMinutes.ceil()} min drive'
+                                          : distance == null
+                                              ? 'Tap to route from your location'
+                                              : '${distance.toStringAsFixed(1)} km away',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: IconButton(
+                              tooltip: 'Get directions',
+                              onPressed: () => onPlaceDirections(place),
+                              icon: const Icon(Icons.directions_outlined),
+                            ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  if (searchedPlaces.isNotEmpty)
-                    SizedBox(
-                      height: 88,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                        itemCount: searchedPlaces.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            Expanded(
+              child: CustomScrollView(
+                controller: _listController,
+                physics: const ClampingScrollPhysics(),
+                slivers: [
+                  if (isLoading && pharmacies.isEmpty)
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                      sliver: SliverList.list(
+                        children: const [
+                          SkeletonBox(width: double.infinity, height: 150),
+                          SizedBox(height: 12),
+                          SkeletonBox(width: double.infinity, height: 150),
+                        ],
+                      ),
+                    )
+                  else if (error != null)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: TextButton.icon(
+                          onPressed: onRetry,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Could not load results. Retry'),
+                        ),
+                      ),
+                    )
+                  else if (pharmacies.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            searchedPlaces.isEmpty
+                                ? 'No matching pharmacies found.'
+                                : 'Destination found. No matching pharmacy inventory nearby.',
+                            style: AppTextStyles.body,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      sliver: SliverList.separated(
+                        itemCount: pharmacies.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
-                          final place = searchedPlaces[index];
-                          final selected = place == selectedPlace;
-                          final distance = currentPosition == null
-                              ? null
-                              : Geolocator.distanceBetween(
-                                    currentPosition!.latitude,
-                                    currentPosition!.longitude,
-                                    place.position.latitude,
-                                    place.position.longitude,
-                                  ) /
-                                  1000;
-                          return Material(
-                            color: selected
-                                ? const Color(0xFFEAF2F1)
-                                : const Color(0xFFF5F6F6),
-                            borderRadius: BorderRadius.circular(14),
-                            child: InkWell(
-                              onTap: () => onPlaceSelected(place),
-                              borderRadius: BorderRadius.circular(14),
-                              child: SizedBox(
-                                width: 285,
-                                child: ListTile(
-                                  leading: const Icon(Icons.place_outlined),
-                                  title: Text(place.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis),
-                                  subtitle: Text(
-                                    selected && isLoadingRoute
-                                        ? 'Calculating driving route…'
-                                        : selected && routeError != null
-                                            ? routeError!
-                                            : selected && routeSummary != null
-                                                ? '${routeSummary!.distanceKm.toStringAsFixed(1)} km • ${routeSummary!.durationMinutes.ceil()} min drive'
-                                                : distance == null
-                                                    ? 'Tap to route from your location'
-                                                    : '${distance.toStringAsFixed(1)} km away',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  trailing: IconButton(
-                                    tooltip: 'Get directions',
-                                    onPressed: () => onPlaceDirections(place),
-                                    icon: const Icon(Icons.directions_outlined),
-                                  ),
-                                ),
-                              ),
-                            ),
+                          final pharmacy = pharmacies[index];
+                          return PharmacyResultCard(
+                            pharmacy: pharmacy,
+                            selected: pharmacy.id == selectedId,
+                            onTap: () => _selectPharmacy(pharmacy),
+                            onDirections: () => onDirections(pharmacy),
+                            distanceKm: currentPosition == null ||
+                                    !pharmacy.hasCoordinates
+                                ? null
+                                : Geolocator.distanceBetween(
+                                      currentPosition.latitude,
+                                      currentPosition.longitude,
+                                      pharmacy.latitude!,
+                                      pharmacy.longitude!,
+                                    ) /
+                                    1000,
                           );
                         },
                       ),
@@ -862,71 +1064,6 @@ class _ResultsSheet extends StatelessWidget {
                 ],
               ),
             ),
-            if (isLoading && pharmacies.isEmpty)
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                sliver: SliverList.list(
-                  children: const [
-                    SkeletonBox(width: double.infinity, height: 150),
-                    SizedBox(height: 12),
-                    SkeletonBox(width: double.infinity, height: 150),
-                  ],
-                ),
-              )
-            else if (error != null)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: TextButton.icon(
-                    onPressed: onRetry,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Could not load results. Retry'),
-                  ),
-                ),
-              )
-            else if (pharmacies.isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      searchedPlaces.isEmpty
-                          ? 'No matching pharmacies found.'
-                          : 'Destination found. No matching pharmacy inventory nearby.',
-                      style: AppTextStyles.body,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                sliver: SliverList.separated(
-                  itemCount: pharmacies.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final pharmacy = pharmacies[index];
-                    return PharmacyResultCard(
-                      pharmacy: pharmacy,
-                      selected: pharmacy.id == selectedId,
-                      onTap: () => onSelected(pharmacy),
-                      onDirections: () => onDirections(pharmacy),
-                      distanceKm:
-                          currentPosition == null || !pharmacy.hasCoordinates
-                              ? null
-                              : Geolocator.distanceBetween(
-                                    currentPosition!.latitude,
-                                    currentPosition!.longitude,
-                                    pharmacy.latitude!,
-                                    pharmacy.longitude!,
-                                  ) /
-                                  1000,
-                    );
-                  },
-                ),
-              ),
           ],
         ),
       ),

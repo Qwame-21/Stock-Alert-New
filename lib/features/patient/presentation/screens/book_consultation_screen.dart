@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/skeleton_loading.dart';
+import '../../../../core/widgets/top_notice.dart';
 import '../../../provider/data/provider_repository.dart';
 import '../../data/models/appointment.dart';
 import '../controllers/bookings_cubit.dart';
@@ -24,11 +25,23 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
   bool _loading = true;
   bool _booking = false;
   String? _error;
+  String? _mode;
+  final _reason = TextEditingController();
+  final _condition = TextEditingController();
+  final _support = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    _condition.dispose();
+    _support.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -91,15 +104,33 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
       time: _time(slot),
       notes:
           '${provider.consultationMode == 'video' ? 'Video' : 'Consultation'} appointment.',
+      consultationMode: _mode,
+      clinicalReason: _reason.text.trim(),
+      patientCondition: _condition.text.trim(),
+      requestedSupport: _support.text.trim(),
     );
     setState(() => _booking = true);
     try {
       await context.read<BookingsCubit>().addBooking(appointment);
-      if (mounted) context.go('/patient/bookings');
+      if (mounted) {
+        showTopNotice(
+          context,
+          title: 'Appointment requested',
+          message:
+              '${provider.name} will review your ${_time(slot)} consultation.',
+          type: TopNoticeType.success,
+        );
+        context.go('/patient/bookings');
+      }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
+        showTopNotice(
+          context,
+          title: 'Could not confirm appointment',
+          message: friendlyNoticeMessage(error),
+          type: TopNoticeType.error,
+          duration: const Duration(seconds: 6),
+        );
       }
     } finally {
       if (mounted) setState(() => _booking = false);
@@ -188,27 +219,89 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
                 onChanged: (value) => setState(() {
                   _provider = value;
                   _slot = null;
+                  _mode = value?.consultationMode == 'both'
+                      ? null
+                      : value?.consultationMode;
                 }),
                 child: Column(
                   children: [
                     for (final provider in _providers)
                       if (provider.slots.isNotEmpty)
-                        Card(
-                          child: RadioListTile<ConsultationProvider>(
-                            value: provider,
-                            title: Text(provider.name),
-                            subtitle: Text(
-                              '${provider.specialty} · ${provider.yearsExperience} years\n'
-                              '${provider.consultationMode.replaceAll('_', ' ')} · '
-                              '${provider.durationMinutes} minutes',
-                            ),
-                            isThreeLine: true,
-                          ),
+                        _ProviderOption(
+                          provider: provider,
+                          selected: _provider == provider,
+                          onSelected: () => setState(() {
+                            _provider = provider;
+                            _slot = null;
+                            _mode = provider.consultationMode == 'both'
+                                ? null
+                                : provider.consultationMode;
+                          }),
                         ),
                   ],
                 ),
               ),
             if (_provider != null) ...[
+              const SizedBox(height: 20),
+              Text('How would you like to meet?',
+                  style: AppTextStyles.subheading),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  if (_provider!.consultationMode != 'in_person')
+                    ButtonSegment(
+                        value: 'video',
+                        icon: const Icon(Icons.videocam_outlined),
+                        label: Text(
+                            'Video • GHS ${_provider!.videoFee.toStringAsFixed(2)}')),
+                  if (_provider!.consultationMode != 'video')
+                    ButtonSegment(
+                        value: 'in_person',
+                        icon: const Icon(Icons.meeting_room_outlined),
+                        label: Text(
+                            'In person • GHS ${_provider!.inPersonFee.toStringAsFixed(2)}')),
+                ],
+                selected: _mode == null ? {} : {_mode!},
+                emptySelectionAllowed: true,
+                onSelectionChanged: (value) =>
+                    setState(() => _mode = value.firstOrNull),
+              ),
+              if (_mode != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '50% deposit: GHS ${((_mode == 'video' ? _provider!.videoFee : _provider!.inPersonFee) / 2).toStringAsFixed(2)}',
+                    style:
+                        AppTextStyles.label.copyWith(color: AppColors.accent),
+                  ),
+                ),
+              const SizedBox(height: 18),
+              Text('What do you need help with?',
+                  style: AppTextStyles.subheading),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: _reason,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                      labelText: 'Reason for consultation',
+                      hintText: 'e.g. Persistent headache')),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: _condition,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                      labelText: 'Condition or symptoms',
+                      hintText: 'When it started and how you feel'),
+                  maxLines: 2),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: _support,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                      labelText: 'What would you like from the provider?',
+                      hintText: 'Advice, review, prescription guidance…'),
+                  maxLines: 2),
               const SizedBox(height: 20),
               Text('Available times', style: AppTextStyles.subheading),
               const SizedBox(height: 8),
@@ -226,7 +319,14 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
               ),
               const SizedBox(height: 24),
               FilledButton(
-                onPressed: _slot == null || _booking ? null : _book,
+                onPressed: _slot == null ||
+                        _mode == null ||
+                        _reason.text.trim().length < 2 ||
+                        _condition.text.trim().length < 2 ||
+                        _support.text.trim().length < 2 ||
+                        _booking
+                    ? null
+                    : _book,
                 child: Text(_booking
                     ? 'Confirming…'
                     : _slot == null
@@ -236,6 +336,131 @@ class _BookConsultationScreenState extends State<BookConsultationScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ProviderOption extends StatefulWidget {
+  const _ProviderOption({
+    required this.provider,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final ConsultationProvider provider;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  State<_ProviderOption> createState() => _ProviderOptionState();
+}
+
+class _ProviderOptionState extends State<_ProviderOption> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = widget.provider;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: widget.selected
+              ? AppColors.accent.withValues(alpha: .08)
+              : Colors.white,
+          border: Border.all(
+            color: widget.selected ? AppColors.accent : AppColors.hairline,
+            width: widget.selected ? 1.5 : 1,
+          ),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(children: [
+          InkWell(
+            onTap: widget.onSelected,
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(children: [
+                CircleAvatar(
+                  radius: 27,
+                  backgroundColor: AppColors.accent.withValues(alpha: .12),
+                  backgroundImage: provider.avatarUrl == null
+                      ? null
+                      : NetworkImage(provider.avatarUrl!),
+                  child: provider.avatarUrl == null
+                      ? const Icon(Icons.person_outline,
+                          color: AppColors.accent)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(provider.name, style: AppTextStyles.subheading),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${provider.specialty} • ${provider.yearsExperience} years',
+                        style: AppTextStyles.body,
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '${provider.durationMinutes} min • ${provider.consultationMode.replaceAll('_', ' ')}',
+                        style: AppTextStyles.label.copyWith(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                    widget.selected
+                        ? Icons.radio_button_checked
+                        : Icons.circle_outlined,
+                    color: widget.selected
+                        ? AppColors.accent
+                        : AppColors.textSecondary),
+              ]),
+            ),
+          ),
+          const Divider(height: 1),
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              child: Row(children: [
+                Text('About this provider',
+                    style: AppTextStyles.label.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600)),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: _expanded ? .5 : 0,
+                  duration: const Duration(milliseconds: 220),
+                  child: const Icon(Icons.keyboard_arrow_down, size: 22),
+                ),
+              ]),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              alignment: Alignment.centerLeft,
+              child: Text(
+                provider.bio ?? 'Verified consultation provider.',
+                style: AppTextStyles.body,
+                textAlign: TextAlign.left,
+              ),
+            ),
+            crossFadeState: _expanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 220),
+          ),
+        ]),
       ),
     );
   }

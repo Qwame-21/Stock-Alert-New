@@ -10,6 +10,10 @@ class ConsultationProvider {
   final String? location;
   final int durationMinutes;
   final List<DateTime> slots;
+  final String? avatarUrl;
+  final double videoFee;
+  final double inPersonFee;
+  final String currency;
 
   const ConsultationProvider({
     required this.id,
@@ -21,6 +25,10 @@ class ConsultationProvider {
     required this.slots,
     this.bio,
     this.location,
+    this.avatarUrl,
+    this.videoFee = 0,
+    this.inPersonFee = 0,
+    this.currency = 'GHS',
   });
 
   factory ConsultationProvider.fromJson(Map<String, dynamic> json) {
@@ -33,6 +41,10 @@ class ConsultationProvider {
       consultationMode: json['consultationMode'] as String? ?? 'video',
       location: json['location'] as String?,
       durationMinutes: (json['durationMinutes'] as num?)?.toInt() ?? 30,
+      avatarUrl: json['avatarUrl'] as String?,
+      videoFee: (json['videoFee'] as num?)?.toDouble() ?? 0,
+      inPersonFee: (json['inPersonFee'] as num?)?.toDouble() ?? 0,
+      currency: json['currency'] as String? ?? 'GHS',
       slots: (json['slots'] as List? ?? const [])
           .map((slot) => DateTime.parse(slot as String).toLocal())
           .toList(),
@@ -66,11 +78,17 @@ class ProviderRepository {
   Future<void> saveAvailability({
     required bool accepting,
     required int duration,
+    required String consultationMode,
+    required double videoFee,
+    required double inPersonFee,
     required List<Map<String, dynamic>> availability,
   }) async {
     await _api.put('/api/v1/consultation-providers/me', body: {
       'isAcceptingBookings': accepting,
       'consultationDuration': duration,
+      'consultationMode': consultationMode,
+      'videoFee': videoFee,
+      'inPersonFee': inPersonFee,
       'availability': availability,
     });
   }

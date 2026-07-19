@@ -17,6 +17,10 @@ describe("booking schemas", () => {
         providerId: uuid,
         providerName: "Dr. Emmanuel Boateng",
         scheduledAt: "2030-07-20T10:30:00+00:00",
+        consultationMode: "video",
+        clinicalReason: "Recurring headaches",
+        patientCondition: "No known chronic condition",
+        requestedSupport: "Assessment and treatment advice",
       }),
     ).not.toThrow();
   });
@@ -28,6 +32,10 @@ describe("booking schemas", () => {
         providerId: uuid,
         providerName: "Dr. Emmanuel Boateng",
         scheduledAt: "2030-07-20T10:30:00+00:00",
+        consultationMode: "video",
+        clinicalReason: "Recurring headaches",
+        patientCondition: "No known chronic condition",
+        requestedSupport: "Assessment and treatment advice",
         durationMinutes: 2,
       }),
     ).toThrow();
@@ -48,6 +56,7 @@ describe("booking schemas", () => {
         mutationId: uuid,
         expectedVersion: 1,
         reason: "",
+        category: "other",
       }),
     ).toThrow();
   });

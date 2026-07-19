@@ -25,6 +25,10 @@ export const createBookingSchema = z.object({
   providerName: z.string().trim().min(2).max(180),
   specialty: z.string().trim().max(180).optional(),
   scheduledAt: z.iso.datetime({ offset: true }),
+  consultationMode: z.enum(["video", "in_person"]),
+  clinicalReason: z.string().trim().min(2).max(300),
+  patientCondition: z.string().trim().min(2).max(300),
+  requestedSupport: z.string().trim().min(2).max(500),
   durationMinutes: z.number().int().min(5).max(480).default(30),
   notes: z.string().trim().max(2000).optional(),
 });
@@ -52,6 +56,7 @@ export const cancelBookingSchema = z.object({
   mutationId: z.uuid(),
   expectedVersion: z.number().int().positive(),
   reason: z.string().trim().min(2).max(500),
+  category: z.enum(["schedule_change", "feeling_better", "cost", "provider_change", "other"]),
 });
 
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;

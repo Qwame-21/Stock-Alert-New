@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/skeleton_loading.dart';
+import '../../../../core/widgets/top_notice.dart';
 import '../controllers/bookings_cubit.dart';
 
 class BookingsScreen extends StatefulWidget {
@@ -14,6 +15,74 @@ class BookingsScreen extends StatefulWidget {
 }
 
 class _BookingsScreenState extends State<BookingsScreen> {
+  String _filter = 'live';
+  final Set<String> _clearedCancelled = {};
+
+  Future<void> _cancelAppointment(String id) async {
+    var category = 'schedule_change';
+    final detail = TextEditingController();
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+              20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Cancel appointment?', style: AppTextStyles.heading),
+            Text('Tell the provider why you need to cancel.',
+                style: AppTextStyles.body),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              initialValue: category,
+              decoration: const InputDecoration(labelText: 'Reason category'),
+              items: const [
+                DropdownMenuItem(
+                    value: 'schedule_change', child: Text('Schedule changed')),
+                DropdownMenuItem(
+                    value: 'feeling_better', child: Text('I feel better')),
+                DropdownMenuItem(value: 'cost', child: Text('Cost concern')),
+                DropdownMenuItem(
+                    value: 'provider_change',
+                    child: Text('Choose another provider')),
+                DropdownMenuItem(value: 'other', child: Text('Other')),
+              ],
+              onChanged: (value) => setSheetState(() => category = value!),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+                controller: detail,
+                maxLines: 2,
+                decoration:
+                    const InputDecoration(labelText: 'Additional detail')),
+            const SizedBox(height: 18),
+            Row(children: [
+              Expanded(
+                  child: OutlinedButton(
+                      onPressed: () => Navigator.pop(sheetContext, false),
+                      child: const Text('Keep booking'))),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: FilledButton(
+                      onPressed: () => Navigator.pop(sheetContext, true),
+                      child: const Text('Cancel booking'))),
+            ]),
+          ]),
+        ),
+      ),
+    );
+    final reason = detail.text.trim();
+    detail.dispose();
+    if (confirmed != true || !mounted) return;
+    await context.read<BookingsCubit>().removeBooking(
+          id,
+          category: category,
+          reason: reason.isEmpty
+              ? 'Cancelled: ${category.replaceAll('_', ' ')}'
+              : reason,
+        );
+  }
+
   String _formatStamp(DateTime value) {
     final hour = value.hour == 0
         ? 12
@@ -28,15 +97,26 @@ class _BookingsScreenState extends State<BookingsScreen> {
     try {
       await context.read<BookingsCubit>().decideBooking(id, status);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(status == 'confirmed'
-            ? 'Appointment accepted. The patient can now see your response.'
-            : 'Appointment declined. The patient can now see your response.'),
-      ));
+      showTopNotice(
+        context,
+        title: status == 'confirmed'
+            ? 'Appointment approved'
+            : 'Appointment declined',
+        message: status == 'confirmed'
+            ? 'The patient can now see the confirmed appointment.'
+            : 'The patient can now see your response.',
+        type: status == 'confirmed'
+            ? TopNoticeType.success
+            : TopNoticeType.warning,
+      );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
+        showTopNotice(
+          context,
+          title: 'Could not update appointment',
+          message: friendlyNoticeMessage(error),
+          type: TopNoticeType.error,
+        );
       }
     }
   }
@@ -84,8 +164,17 @@ class _BookingsScreenState extends State<BookingsScreen> {
             );
           }
 
-          final appointments = state.appointments;
-          if (appointments.isEmpty) {
+          final allAppointments = state.appointments;
+          final appointments = allAppointments.where((appointment) {
+            if (_clearedCancelled.contains(appointment.id)) return false;
+            return switch (_filter) {
+              'approved' => appointment.status == 'confirmed',
+              'cancelled' => appointment.status == 'cancelled',
+              _ => !{'cancelled', 'completed', 'no_show'}
+                  .contains(appointment.status),
+            };
+          }).toList();
+          if (allAppointments.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -108,10 +197,60 @@ class _BookingsScreenState extends State<BookingsScreen> {
             onRefresh: () => context.read<BookingsCubit>().refresh(),
             child: ListView.separated(
               padding: const EdgeInsets.all(20),
-              itemCount: appointments.length,
+              itemCount: appointments.length + 1,
               separatorBuilder: (_, __) => const SizedBox(height: 14),
               itemBuilder: (context, index) {
-                final appt = appointments[index];
+                if (index == 0) {
+                  return Column(children: [
+                    Row(children: [
+                      Expanded(
+                          child: SegmentedButton<String>(
+                        showSelectedIcon: false,
+                        style: ButtonStyle(
+                          backgroundColor: WidgetStateProperty.resolveWith(
+                            (states) => states.contains(WidgetState.selected)
+                                ? AppColors.accent
+                                : const Color(0xFFF2F6F5),
+                          ),
+                          foregroundColor: WidgetStateProperty.resolveWith(
+                            (states) => states.contains(WidgetState.selected)
+                                ? Colors.white
+                                : AppColors.accent,
+                          ),
+                          side: const WidgetStatePropertyAll(
+                            BorderSide(color: AppColors.accent),
+                          ),
+                        ),
+                        segments: const [
+                          ButtonSegment(value: 'live', label: Text('Live')),
+                          ButtonSegment(
+                              value: 'approved', label: Text('Approved')),
+                          ButtonSegment(
+                              value: 'cancelled', label: Text('Cancelled')),
+                        ],
+                        selected: {_filter},
+                        onSelectionChanged: (value) =>
+                            setState(() => _filter = value.first),
+                      )),
+                      if (isProvider && _filter == 'cancelled')
+                        IconButton(
+                          tooltip: 'Clear cancelled bookings',
+                          onPressed: appointments.isEmpty
+                              ? null
+                              : () => setState(() => _clearedCancelled
+                                  .addAll(appointments.map((item) => item.id))),
+                          icon: const Icon(Icons.cleaning_services_outlined),
+                        ),
+                    ]),
+                    if (appointments.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Text('No $_filter appointments.',
+                            style: AppTextStyles.body),
+                      ),
+                  ]);
+                }
+                final appt = appointments[index - 1];
 
                 return Container(
                   padding: const EdgeInsets.all(16),
@@ -244,10 +383,11 @@ class _BookingsScreenState extends State<BookingsScreen> {
                         const SizedBox(height: 12),
                         InkWell(
                           onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text(
-                                      'Launching telehealth consultation at ${appt.videoLink}')),
+                            showTopNotice(
+                              context,
+                              title: 'Opening consultation',
+                              message: 'Your secure video room is ready.',
+                              type: TopNoticeType.info,
                             );
                           },
                           child: Container(
@@ -359,10 +499,12 @@ class _BookingsScreenState extends State<BookingsScreen> {
                                 MediaQuery.textScalerOf(context).scale(14) > 18;
                             final rescheduleButton = OutlinedButton(
                               onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text(
-                                          'Reschedule request sent to clinic.')),
+                                showTopNotice(
+                                  context,
+                                  title: 'Reschedule requested',
+                                  message:
+                                      'The clinic will review your request.',
+                                  type: TopNoticeType.info,
                                 );
                               },
                               style: OutlinedButton.styleFrom(
@@ -378,17 +520,26 @@ class _BookingsScreenState extends State<BookingsScreen> {
                               child: const Text('Reschedule'),
                             );
                             final cancelButton = OutlinedButton(
-                              onPressed: () {
-                                context
-                                    .read<BookingsCubit>()
-                                    .removeBooking(appt.id);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                        'Appointment cancelled successfully.'),
-                                    backgroundColor: AppColors.statusBad,
-                                  ),
-                                );
+                              onPressed: () async {
+                                try {
+                                  await _cancelAppointment(appt.id);
+                                  if (!context.mounted) return;
+                                  showTopNotice(
+                                    context,
+                                    title: 'Appointment cancelled',
+                                    message:
+                                        'The appointment was removed from your schedule.',
+                                    type: TopNoticeType.warning,
+                                  );
+                                } catch (error) {
+                                  if (!context.mounted) return;
+                                  showTopNotice(
+                                    context,
+                                    title: 'Could not cancel appointment',
+                                    message: friendlyNoticeMessage(error),
+                                    type: TopNoticeType.error,
+                                  );
+                                }
                               },
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppColors.statusBad,
