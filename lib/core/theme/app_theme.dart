@@ -1,30 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Central place for colors and text styles so no screen ever hardcodes
-/// a hex value. Keeping this thin on purpose — one accent color, mostly
-/// neutrals, nothing decorative.
+/// Colours and text styles shared by the screens.
 class AppColors {
   AppColors._();
 
   static const Color background = Color(0xFFFFFFFF);
   static const Color surface = Colors.white;
 
-  // the one accent — used only for primary actions and active states
-  static const Color accent = Color(0xFF1B5349); // richer, premium deep teal
+  // Main colour for buttons and active items.
+  static const Color accent = Color(0xFF1B5349);
 
   static const Color textPrimary = Color(0xFF1A1A1A);
   static const Color textSecondary = Color(0xFF6B6B6B);
   static const Color hairline = Color(0xFFE3E3E3);
 
-  // status colors, reserved only for stock/verification states
+  // Stock and verification colours.
   static const Color statusGood = Color(0xFF2E7D32);
   static const Color statusWarning = Color(0xFFB8860B);
   static const Color statusBad = Color(0xFFB3261E);
 
-  // used behind frosted glass panels
-  static const Color glassTint = Color(
-      0x66FFFFFF); // more translucent for higher contrast against background
+  // Background for glass cards.
+  static const Color glassTint = Color(0x66FFFFFF);
 }
 
 class AppRadius {
@@ -32,12 +29,7 @@ class AppRadius {
   static const double card = 20.0;
 }
 
-/// All text styles use Poppins for consistent, premium typography.
-/// Weights follow a clear hierarchy:
-///   heading     → SemiBold 24pt  (w600)
-///   subheading  → Medium   16pt  (w500)
-///   body        → Regular  14pt  (w400)
-///   label       → Medium   12pt  (w500, slightly tracked)
+/// Poppins styles used across the app.
 class AppTextStyles {
   AppTextStyles._();
 
@@ -70,8 +62,7 @@ class AppTextStyles {
 }
 
 ThemeData buildAppTheme() {
-  // Apply Poppins to the entire Material text theme so all widgets
-  // that inherit from the theme automatically use the right font.
+  // Apply Poppins to widgets using the Material theme.
   final base = GoogleFonts.poppinsTextTheme();
 
   return ThemeData(

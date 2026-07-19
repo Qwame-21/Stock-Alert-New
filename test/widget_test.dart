@@ -153,7 +153,7 @@ void main() {
     await tester.pumpWidget(const StockAlertApp());
     await tester.pumpAndSettle();
 
-    // Verify Welcome Screen displays title and tagline
+    // Check the welcome text is shown.
     expect(find.text('StockAlert'), findsOneWidget);
     expect(find.text('Care and pharmacy, connected.'), findsOneWidget);
     expect(find.text('Get Started'), findsOneWidget);

@@ -2,11 +2,7 @@ import '../../../../core/sync/sync_status.dart';
 
 enum VerificationStatus { pending, verified, rejected }
 
-/// The patient's identity tag. `qrToken` is a random opaque string that
-/// means nothing on its own - scanning it just looks up this record on
-/// the backend. Name, DOB, and phone are deliberately NOT encoded into
-/// the QR itself, so a photographed or leaked QR code doesn't leak
-/// personal information on its own.
+/// Patient identity tag. The QR stores a random token, not personal details.
 class IdentityTagModel {
   final String id;
   final String patientId;

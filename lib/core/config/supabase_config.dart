@@ -2,10 +2,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // ── Supabase Configuration ────────────────────────────────────────────────────
 //
-// Values are injected at compile-time via --dart-define flags.
-// NEVER hardcode the URL or keys here.
-//
-// Required build flags:
+// Values come from .env or these build flags:
 //   --dart-define=SUPABASE_URL=https://...
 //   --dart-define=SUPABASE_ANON_KEY=eyJ...
 abstract final class SupabaseConfig {

@@ -21,12 +21,17 @@ migrate_working_dir/
 .env
 .env.*
 !.env.example
+**/local.properties
+**/*.keystore
+**/*.jks
+**/google-services.json
+**/GoogleService-Info.plist
+**/secrets/
+**/keys/
 **/node_modules/
 **/.next/
 **/.vercel/
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
+# Local editor settings are not needed in the repo.
 #.vscode/
 
 # Flutter/Dart/Pub related

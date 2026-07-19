@@ -1,12 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Anything that is a credential, a key, or a sensitive setting goes through
-/// here — never into sqflite. Wraps Keychain on iOS and Keystore on Android.
-///
-/// NOTE: Auth tokens are no longer managed here — Supabase handles session
-/// persistence internally via its own secure storage. This class is retained
-/// for any future app-specific secrets (e.g. biometric PIN, local encryption keys).
+/// Stores sensitive app values in Keychain or Android Keystore.
+/// Supabase manages its own auth tokens separately.
 class SecureStorageService {
   final FlutterSecureStorage _storage;
   final Map<String, String> _webMemCache = {};

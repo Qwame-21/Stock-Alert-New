@@ -1,14 +1,10 @@
 import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-/// Platform-specific Google Maps API key resolution.
-///
-/// Keys are injected at build time via --dart-define flags:
+/// Gets the Google Maps key for the current phone.
+/// Keys can also use build flags:
 ///   --dart-define=MAPS_API_KEY_ANDROID=<key>
 ///   --dart-define=MAPS_API_KEY_IOS=<key>
-///
-/// If a key is absent (empty string), [hasKey] returns false and the
-/// locator screen displays a configuration message.
 class MapsConfig {
   MapsConfig._();
 
@@ -26,14 +22,14 @@ class MapsConfig {
       ? _definedIosKey
       : dotenv.env['MAPS_API_KEY_IOS'] ?? '';
 
-  /// Returns the correct key for the current platform.
+  /// Picks the Android or iOS key.
   static String get apiKey {
     if (Platform.isAndroid) return _androidKey;
     if (Platform.isIOS) return _iosKey;
     return '';
   }
 
-  /// True when a non-empty key is available for the current platform.
+  /// Checks that a key was added.
   static bool get hasKey => apiKey.isNotEmpty;
 
   static const String androidPackageName = String.fromEnvironment(

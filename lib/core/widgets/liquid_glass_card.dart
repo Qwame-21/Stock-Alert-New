@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-/// A crisp translucent card. No backdrop blur is applied.
+/// Translucent card without backdrop blur.
 class LiquidGlassCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -20,16 +20,14 @@ class LiquidGlassCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(radius),
       child: Stack(
         children: [
-          // base translucent fill
+          // Main transparent fill.
           Container(
             decoration: BoxDecoration(
               color: AppColors.glassTint,
               borderRadius: BorderRadius.circular(radius),
             ),
           ),
-          // the specular highlight - a soft light catching the top edge,
-          // this is what makes it read as curved glass rather than a
-          // flat tinted panel
+          // Light along the top makes the card look curved.
           Positioned(
             top: 0,
             left: 0,
@@ -52,8 +50,7 @@ class LiquidGlassCard extends StatelessWidget {
               ),
             ),
           ),
-          // border - brighter along the top than the bottom, matching
-          // how light actually falls on a glass edge
+          // The top border is brighter than the bottom.
           Container(
             decoration: BoxDecoration(
               border: Border(

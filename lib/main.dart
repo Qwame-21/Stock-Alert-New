@@ -20,8 +20,7 @@ import 'features/patient/presentation/controllers/bookings_cubit.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // flutter_dotenv reads through Flutter's asset bundle, so bindings must be
-  // ready first. Dart defines remain available for release/CI builds.
+  // dotenv needs Flutter ready before it can read the asset.
   await dotenv.load(fileName: '.env', isOptional: true);
 
   if (!SupabaseConfig.isConfigured) {
@@ -35,10 +34,7 @@ Future<void> main() async {
     url: SupabaseConfig.url,
     publishableKey: SupabaseConfig.anonKey,
     authOptions: const FlutterAuthClientOptions(
-      // PKCE is required for mobile deep link auth flows.
-      // When the user taps the email confirmation link, the OS intercepts
-      // stockalert://auth/callback and re-opens the app. supabase_flutter
-      // then exchanges the code/token automatically and creates a session.
+      // PKCE handles the email link when it opens the app again.
       authFlowType: AuthFlowType.pkce,
     ),
   );

@@ -1,12 +1,10 @@
-/// Every record that can move between the device and Supabase carries one
-/// of these. Screens can read this to show something like "syncing..." or
-/// a small warning dot, instead of pretending sync always just works.
+/// Current state of a record waiting to sync.
 enum SyncStatus {
-  pending, // written locally, waiting to be sent
-  uploading, // actively being sent right now
-  synced, // confirmed saved on the backend
-  conflict, // backend version and local version disagree, needs resolving
-  failed, // upload attempted and failed, will retry
+  pending, // Saved locally and waiting.
+  uploading, // Sending now.
+  synced, // Saved on the backend.
+  conflict, // Local and backend versions differ.
+  failed, // Failed and will retry.
 }
 
 extension SyncStatusStorage on SyncStatus {
